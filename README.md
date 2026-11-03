@@ -1,88 +1,114 @@
 # Clipplex
 
-Have you ever, while watching something on your plex server, wanted to easily extract a clip out of a good movie or tv show you're watching to share it with your friend, family or the world? While this was always possible, the process can be complex for something "so simple".
+Pull a clip out of whatever you're currently watching on Plex, without hunting
+for the file yourself. Clipplex asks Plex what you're playing and where you are
+in it, then cuts the range you pick with ffmpeg and lists the result for you to
+download or share.
 
-![](https://github.com/jo-nike/clipplex/blob/master/example.gif)
+This is a fork of [jo-nike/clipplex](https://github.com/jo-nike/clipplex),
+updated to run on a current Python/Flask stack with a rebuilt interface.
 
-## Description
+## How it works
 
-An in-depth paragraph about your project and overview of use.
+Clipplex reads your active session from the Plex API, which reports the media's
+**absolute path as Plex sees it**. It hands that path straight to ffmpeg.
 
-## Docker variables
+That makes one thing non-negotiable: **the container must see your media at the
+same paths your Plex server does.** If Plex has `/data/movies`, Clipplex needs
+`/data/movies` too — pointing it at the same files under a different path will
+not work.
 
-| Variables            | Value            | Notes     |
-| ---------------------|:----------------:| ----------|
-| PUID                 | 1000             | Optional  |
-| GUID                 | 1000             | Optional  |
-| TZ                   | America/New_York | Optional  |
-| PLEX_URL             | link to plex     | Mandatory |
-| PLEX_TOKEN           | token for plex   | Mandatory |
-| STREAMABLE_LOGIN     | ...              | Optional  |
-| STREAMABLE_PASSWORD  | ...              | Optional  |
+## Configuration
 
-Finding Plex token: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+| Variable              | Required | Notes                                                     |
+| --------------------- | -------- | --------------------------------------------------------- |
+| `PLEX_URL`            | yes      | e.g. `http://plex:32400`. See the note below for host networking. |
+| `PLEX_TOKEN`          | yes      | [Finding your token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/) |
+| `PLEX_USERNAME`       | no       | Pre-fills the username field                               |
+| `STREAMABLE_LOGIN`    | no       | Needed only for the Share button                           |
+| `STREAMABLE_PASSWORD` | no       | As above                                                   |
+| `SECRET_KEY`          | no       | Flask session key; a random one is generated if unset      |
+| `TZ`                  | no       | Defaults to `America/Los_Angeles`                          |
 
-Volumes: You will need to mount two locations:
-* one that point to your media, in the exact same fashion your plex access these media (as the path are absolutes) 
-* one where the new clips will be created.
+### Volumes
 
-media need to be mounted into the container path: /media
+- your media, mounted at **the same paths Plex uses**
+- somewhere for the clips: `/app/app/static/media`
 
-clips need to be mounted into the container path: /app/app/static/media (yes, I'll get that better eventually).
+### Port
 
-Port: Port 5000 is used to serve the frontend. (yes I will serve flask with gunicorn at some point)
+The app listens on **5000** inside the container (gunicorn).
 
-Network: Need to be on the same network as your plex instance.
+### Reaching Plex
 
-```
-docker run -d --name clipplex -p 9945:5000 -v /media:/media -v /volumes/clipplex:/app/app/static/media --restart always -e PUID=1000 -e PGID=1000 -e TZ=America/New_York -e PLEX_URL=YOURPLEXURL -e PLEX_TOKEN=YOURPLEXTOKEN jonnike/clipplex:latest
-```
+If Plex runs with `network_mode: host` and Clipplex is on a bridge network,
+`http://plex:32400` will not resolve. Use the Docker bridge gateway instead —
+usually `http://172.17.0.1:32400`.
 
-## Docker Compose Example
-```
-version: "3.5"
-networks:
-  docker_internal_network:
-    name: plex_stack
+## Running it
+
+```yaml
+services:
   clipplex:
-    image: jonnike/clipplex:latest
-    container_name: clipplex-alpha
-    networks:
-      - docker_internal_network
+    build: ./clipplex/src
+    image: clipplex:local
+    container_name: clipplex
+    restart: unless-stopped
     environment:
-      - PYTHONUNBUFFERED=1
-      - PUID=1000
-      - PGID=1000
-      - TZ=America/New_York
-      - PLEX_URL=YOUR_PLEX_URL (example: http://plex:32400)
-      - PLEX_TOKEN=YOUR_PLEX_TOKEN
-      - STREAMABLE_LOGIN=YOUR_STREAMABLE_LOGIN
-      - STREAMABLE_PASSWORD=YOUR_STREAMABLE_PASSWORD
+      - PLEX_URL=http://172.17.0.1:32400
+      - PLEX_TOKEN=${PLEX_TOKEN}
+      - PLEX_USERNAME=yourplexuser
+      - STREAMABLE_LOGIN=${STREAMABLE_LOGIN:-}
+      - STREAMABLE_PASSWORD=${STREAMABLE_PASSWORD:-}
+      - TZ=America/Los_Angeles
     volumes:
-      - /media:/media
-      - /volumes/clipplex:/app/app/static/media
+      # left side: where the files really are
+      # right side: the paths Plex reports — these must match your Plex container
+      - /mnt/media/TV:/data/tvshows:ro
+      - /mnt/media/Movies:/data/movies:ro
+      - /srv/clipplex/media:/app/app/static/media
     ports:
       - 9945:5000
 ```
 
-## Authors
+Keep secrets in a `.env` file next to the compose file rather than inline:
 
-Contributors names and contact info
+```bash
+printf 'PLEX_TOKEN=%s\n' "$TOKEN" > .env
+chmod 600 .env
+```
 
-Jo Nike
+Then:
 
-## Version History
+```bash
+docker compose up -d --build clipplex
+```
 
-* 0.0.3
-    
-    Initial Release
+## Using it
 
-## License
+1. Start playing something in Plex.
+2. Enter your Plex username and press the eye icon — Clipplex shows what's
+   playing and your current position.
+3. **Use as start**, then one of the `+15s` / `+30s` / `+1m` / `+2m` buttons,
+   or type the times in directly.
+4. **Create clip.** It appears in the library below, with its Plex metadata.
+5. Download it, or **Share** to upload to Streamable. The link stays on the
+   card afterwards.
 
-Distributed under the MIT License. See the LICENSE file information.
+## Changes in this fork
 
-## Acknowledgments
+- Runs on Alpine 3.21 / Python 3.12 / Flask 3.1, served by gunicorn
+- Fixed a build that could never start (`FLASK_APP` was set by a no-op `RUN`)
+- Rebuilt the frontend: no Bootstrap or jQuery, responsive, with the clip
+  library as cards showing each clip's metadata
+- Streamable failures report the actual reason instead of a blank 500, and
+  successful uploads keep their link on the card
+- Clip filenames and share titles no longer embed the Plex username
+- The username is configurable rather than hardcoded
 
-* Thanks to the resident of flavourtown for allowing me to pitch my ideas and share my progress with them.
+## Credits
 
-* Thanks to [Start Bootstrap](https://github.com/startbootstrap/startbootstrap-sb-admin) for the UI.
+Original work by **Jo Nike** — [jo-nike/clipplex](https://github.com/jo-nike/clipplex).
+UI originally based on [Start Bootstrap](https://github.com/startbootstrap/startbootstrap-sb-admin), since replaced.
+
+Distributed under the MIT License. See the LICENSE file.
