@@ -74,8 +74,11 @@ def remove_file():
 @app.route("/streamable_upload", methods=["POST"])
 def streamable_upload():
     file_path = request.args.get("file_path")
-    upload = clipplexAPI.Utils().streamable_upload(file_path)
-    return upload
+    try:
+        return jsonify(clipplexAPI.Utils().streamable_upload(file_path))
+    except clipplexAPI.StreamableError as e:
+        app.logger.warning("Streamable upload failed: %s", e)
+        return jsonify({"message": str(e)}), 502
 
 @app.route("/login.html", methods=["GET", "POST"])
 def login():

@@ -8,6 +8,10 @@ import requests
 
 MEDIA_STATIC_PATH = "app/static/media"
 
+
+class StreamableError(Exception):
+    """Raised when a clip could not be uploaded to Streamable."""
+
 class PlexInfo:
     def __init__(self, username):
         self.plex_url = os.environ.get("PLEX_URL")
@@ -230,16 +234,33 @@ class Utils:
         except:
             return False
 
-    def streamable_upload(self, file_path) -> str:
-        file_processed = {
-            "file": (file_path.split("/")[-1], open(f"app/{file_path}", "rb")),
-        }
+    def streamable_upload(self, file_path) -> dict:
         email = os.environ.get("STREAMABLE_LOGIN") or ""
         password = os.environ.get("STREAMABLE_PASSWORD") or ""
+        if not email or not password:
+            raise StreamableError(
+                "Streamable credentials are not configured. Set STREAMABLE_LOGIN and STREAMABLE_PASSWORD."
+            )
+        full_path = f"app/{file_path}"
         try:
-            response = requests.post("https://api.streamable.com/upload", auth=(email, password), files=file_processed).json()
-            return response
-        except Exception as e:
-            raise Exception(f"Problem uploading to streamable: {e}")
+            with open(full_path, "rb") as clip:
+                response = requests.post(
+                    "https://api.streamable.com/upload",
+                    auth=(email, password),
+                    files={"file": (os.path.basename(full_path), clip)},
+                    timeout=600,
+                )
+        except OSError as e:
+            raise StreamableError(f"Could not read {full_path}: {e}")
+        except requests.RequestException as e:
+            raise StreamableError(f"Could not reach Streamable: {e}")
+
+        if response.status_code != 200:
+            detail = response.text.strip()[:200] or "no response body"
+            raise StreamableError(f"Streamable returned HTTP {response.status_code}: {detail}")
+        try:
+            return response.json()
+        except ValueError:
+            raise StreamableError("Streamable returned a response that was not JSON.")
 
 

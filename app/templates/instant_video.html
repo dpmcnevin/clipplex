@@ -219,10 +219,14 @@
           $('#layoutSidenav').css({'filter': '', '-webkit-filter': ''})
           $('#Info').text("Video uploaded to Streamable. URL: https://streamable.com/"+obj.shortcode)
         } else {
-          console.error(Http.statusText);
+          var message = Http.statusText;
+          try {
+            message = JSON.parse(Http.responseText).message || message;
+          } catch (err) {}
+          console.error(message);
           $('#loadingDiv').remove()
           $('#layoutSidenav').css({'filter': '', '-webkit-filter': ''})
-          $('#Info').text("Streamable: "+Http.statusText)
+          $('#Info').text("Streamable: "+message)
         }
       }
     };
