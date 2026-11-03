@@ -13,7 +13,13 @@ def home():
 
 @app.route("/instant_snapshot.html", methods=["GET"])
 def instant_snapshot():
-    return render_template("instant_snapshot.html", title="Instant Snapshot", images=clipplexAPI.Utils.get_images_in_folder(), default_username=DEFAULT_USERNAME)
+    return render_template(
+        "instant_snapshot.html",
+        title="Instant Snapshot",
+        active_page="snapshot",
+        images=clipplexAPI.Utils.get_images_in_folder(),
+        default_username=DEFAULT_USERNAME,
+    )
 
 @app.route("/get_instant_snapshot", methods=["GET"])
 def get_instant_snapshot():
@@ -34,7 +40,13 @@ def get_current_stream():
 @app.route("/instant_video.html", methods=["GET"])
 def timed_video():
     form = formVideo(user=DEFAULT_USERNAME)
-    return render_template("instant_video.html", form=form, title="Instant Video", videos=clipplexAPI.Utils.get_videos_in_folder())
+    return render_template(
+        "instant_video.html",
+        form=form,
+        title="Instant Video",
+        active_page="video",
+        videos=clipplexAPI.Utils.get_videos_in_folder(),
+    )
 
 @app.route("/create_video", methods=["POST"])
 def create_video():
