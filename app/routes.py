@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from flask import render_template, redirect, request, jsonify
 from app import app
@@ -60,8 +61,10 @@ def create_video():
 def get_instant_video(username, start, end):
     plex_data = clipplexAPI.PlexInfo(username)
     clip_time = clipplexAPI.Utils().calculate_clip_time(start, end)
-    media_name = plex_data.media_title.replace(" ", "")
-    file_name = f"{username}_{media_name}_{int(time.time())}"
+    # Keep the username out of the filename: it is kept in the clip's metadata,
+    # and the filename ends up as the title on anything the clip is shared to.
+    media_name = re.sub(r"[^\w.-]", "", plex_data.media_title.replace(" ", ""))
+    file_name = f"{media_name}_{int(time.time())}"
     current_media_time = plex_data.current_media_time_str
     print(f"Creating video of {clip_time} seconds starting at {start} for user {username} for file {plex_data.media_path}")
     video = clipplexAPI.Video(plex_data, start, clip_time, file_name)

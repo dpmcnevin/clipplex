@@ -74,10 +74,11 @@
 <div class="clips">
   {% for video in videos %}
     {% set file_path = video['file_path'] %}
-    <article class="clip">
+    <article class="clip" data-file="{{ file_path }}">
       <video controls preload="metadata">
         <source src="/{{ file_path }}" type="video/mp4" />
       </video>
+      <div class="clip-share" hidden></div>
       <div class="clip-body">
         {% if video['show'] %}
           <div class="clip-title">{{ video['show'] }}</div>
@@ -239,6 +240,71 @@
     }
   }
 
+  // Streamable shortcodes are not stored server-side, so a reload would
+  // otherwise lose the share URL for good.
+  const SHARE_KEY = "clipplex_shares";
+
+  function loadShares() {
+    try {
+      return JSON.parse(localStorage.getItem(SHARE_KEY)) || {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveShare(file, url) {
+    try {
+      const shares = loadShares();
+      shares[file] = url;
+      localStorage.setItem(SHARE_KEY, JSON.stringify(shares));
+    } catch (err) {
+      /* private mode or full storage: the link still shows for this page */
+    }
+  }
+
+  function renderShare(file, url) {
+    const card = document.querySelector('.clip[data-file="' + CSS.escape(file) + '"]');
+    if (!card) return;
+    const row = card.querySelector(".clip-share");
+    row.innerHTML = "";
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = url.replace(/^https:\/\//, "");
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "chip";
+    copy.textContent = "Copy";
+    copy.onclick = () => {
+      navigator.clipboard?.writeText(url)
+        .then(() => showToast("Link copied.", "ok"))
+        .catch(() => showToast("Copy failed — the link is on the card.", "error"));
+    };
+
+    row.append(link, copy);
+    row.hidden = false;
+  }
+
+  function shareLinkNode(url) {
+    const wrap = document.createElement("span");
+    wrap.append(document.createTextNode("Uploaded to "));
+    const link = document.createElement("a");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = url;
+    wrap.appendChild(link);
+    return wrap;
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const shares = loadShares();
+    Object.keys(shares).forEach((file) => renderShare(file, shares[file]));
+  });
+
   async function uploadStreamable(file) {
     showOverlay("Uploading to Streamable…");
     try {
@@ -247,14 +313,16 @@
       hideOverlay();
       if (res.ok && data.shortcode) {
         const url = "https://streamable.com/" + data.shortcode;
-        showToast("Uploaded: " + url, "ok");
+        saveShare(file, url);
+        renderShare(file, url);
+        showToast(shareLinkNode(url), "ok", { html: true, sticky: true });
         navigator.clipboard?.writeText(url).catch(() => {});
       } else {
-        showToast("Streamable: " + (data.message || "upload failed"), "error");
+        showToast("Streamable: " + (data.message || "upload failed"), "error", { sticky: true });
       }
     } catch (err) {
       hideOverlay();
-      showToast("Streamable upload failed: " + err.message, "error");
+      showToast("Streamable upload failed: " + err.message, "error", { sticky: true });
     }
   }
 </script>

@@ -36,13 +36,37 @@
     </div>
 
     <script>
-      function showToast(message, kind) {
+      // opts.html keeps markup (used for the Streamable link); opts.sticky
+      // leaves the toast up until it is dismissed, so a URL can't vanish
+      // while it is still being read.
+      function showToast(message, kind, opts) {
+        opts = opts || {};
         const el = document.getElementById("toast");
-        el.textContent = message;
+        el.innerHTML = "";
+
+        const body = document.createElement("div");
+        body.className = "toast-body";
+        if (opts.html) {
+          body.appendChild(message);
+        } else {
+          body.textContent = message;
+        }
+        el.appendChild(body);
+
+        const close = document.createElement("button");
+        close.className = "toast-close";
+        close.type = "button";
+        close.setAttribute("aria-label", "Dismiss");
+        close.innerHTML = '<i class="fas fa-times"></i>';
+        close.onclick = () => { el.hidden = true; };
+        el.appendChild(close);
+
         el.className = "toast" + (kind ? " toast--" + kind : "");
         el.hidden = false;
         clearTimeout(el._timer);
-        el._timer = setTimeout(() => { el.hidden = true; }, 8000);
+        if (!opts.sticky) {
+          el._timer = setTimeout(() => { el.hidden = true; }, 8000);
+        }
       }
 
       function showOverlay(text) {

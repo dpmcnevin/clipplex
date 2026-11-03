@@ -326,6 +326,29 @@ input[type="text"]:focus {
   aspect-ratio: 16 / 9;
 }
 
+.clip-share {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.clip-share a {
+  color: var(--accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.clip-share a:hover {
+  text-decoration: underline;
+}
+
 .clip-body {
   padding: 14px 16px;
   display: flex;
@@ -411,6 +434,9 @@ input[type="text"]:focus {
 /* ---------- toast + overlay ---------- */
 
 .toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
   position: fixed;
   left: 50%;
   bottom: 24px;
@@ -423,6 +449,29 @@ input[type="text"]:focus {
   box-shadow: var(--shadow);
   max-width: min(560px, calc(100vw - 40px));
   z-index: 50;
+}
+
+.toast-body {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toast a {
+  color: var(--accent);
+}
+
+.toast-close {
+  background: transparent;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toast-close:hover {
+  color: var(--text);
 }
 
 .toast--ok {

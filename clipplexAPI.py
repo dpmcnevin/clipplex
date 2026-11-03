@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 import os
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 import ffmpeg
@@ -234,6 +235,36 @@ class Utils:
         except:
             return False
 
+    def upload_name(self, full_path: str) -> str:
+        """Build the name sent to Streamable, which shows it as the video title.
+
+        Taken from the clip's own metadata so the title reads like the show
+        rather than the stored filename, which carries the Plex username.
+        """
+        try:
+            tags = ffmpeg.probe(full_path)["format"]["tags"]
+        except Exception:
+            tags = {}
+        title = (tags.get("title") or "").strip()
+        show = (tags.get("show") or "").strip()
+        season = (tags.get("season_number") or "").strip()
+        episode = (tags.get("episode_id") or "").strip()
+
+        if show and season and episode:
+            name = f"{show} - S{season}E{episode} - {title}"
+        elif show:
+            name = f"{show} - {title}"
+        else:
+            name = title
+
+        name = name.strip(" -")
+        if not name:
+            # Older clips may have no metadata: fall back to the filename with
+            # the leading username and the trailing timestamp removed.
+            stem = os.path.splitext(os.path.basename(full_path))[0]
+            name = re.sub(r"_\d{9,}$", "", stem.split("_", 1)[-1])
+        return f"{name}.mp4"
+
     def streamable_upload(self, file_path) -> dict:
         email = os.environ.get("STREAMABLE_LOGIN") or ""
         password = os.environ.get("STREAMABLE_PASSWORD") or ""
@@ -247,7 +278,7 @@ class Utils:
                 response = requests.post(
                     "https://api.streamable.com/upload",
                     auth=(email, password),
-                    files={"file": (os.path.basename(full_path), clip)},
+                    files={"file": (self.upload_name(full_path), clip)},
                     timeout=600,
                 )
         except OSError as e:
