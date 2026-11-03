@@ -1,0 +1,7 @@
+.git
+.gitignore
+example.gif
+._*
+.DS_Store
+__pycache__
+*.pyc

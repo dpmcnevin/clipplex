@@ -1,4 +1,3 @@
-from cmath import e
 from datetime import datetime, timedelta
 import os
 import subprocess
@@ -13,7 +12,7 @@ class PlexInfo:
     def __init__(self, username):
         self.plex_url = os.environ.get("PLEX_URL")
         self.plex_token = os.environ.get("PLEX_TOKEN")
-        self.params = (("X-Plex-Token", {self.plex_token}),)
+        self.params = (("X-Plex-Token", self.plex_token),)
         self.sessions_xml = self._get_current_sessions_xml()
         self.username = username
         self.session_id = self._get_session_id(username)

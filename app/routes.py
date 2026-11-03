@@ -1,8 +1,11 @@
+import os
 import time
 from flask import render_template, redirect, request, jsonify
 from app import app
 from app.forms import video as formVideo
 import clipplexAPI
+
+DEFAULT_USERNAME = os.environ.get("PLEX_USERNAME") or ""
 
 @app.route("/")
 def home():
@@ -10,11 +13,11 @@ def home():
 
 @app.route("/instant_snapshot.html", methods=["GET"])
 def instant_snapshot():
-    return render_template("instant_snapshot.html", title="Instant Snapshot", images=clipplexAPI.Utils.get_images_in_folder())
+    return render_template("instant_snapshot.html", title="Instant Snapshot", images=clipplexAPI.Utils.get_images_in_folder(), default_username=DEFAULT_USERNAME)
 
 @app.route("/get_instant_snapshot", methods=["GET"])
 def get_instant_snapshot():
-    plex_data = clipplexAPI.PlexInfo("jonike") #DEBUG
+    plex_data = clipplexAPI.PlexInfo(request.args.get("username") or DEFAULT_USERNAME)
     snapshot = clipplexAPI.Snapshot(plex_data.media_path, plex_data.current_media_time_str, plex_data.media_fps)
     snapshot._download_frames()
     return "Files downloaded"
@@ -30,7 +33,7 @@ def get_current_stream():
 
 @app.route("/instant_video.html", methods=["GET"])
 def timed_video():
-    form = formVideo()
+    form = formVideo(user=DEFAULT_USERNAME)
     return render_template("instant_video.html", form=form, title="Instant Video", videos=clipplexAPI.Utils.get_videos_in_folder())
 
 @app.route("/create_video", methods=["POST"])
