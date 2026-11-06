@@ -1,48 +1,49 @@
 # Clipplex
 
-Pull a clip out of whatever you're currently watching on Plex, without hunting
-for the file yourself. Clipplex asks Plex what you're playing and where you are
-in it, then cuts the range you pick with ffmpeg and lists the result for you to
-download or share.
+Pull a clip out of your media and share it, without hunting for the file
+yourself. Point Clipplex at what you're watching in Plex, search your Plex
+library, or just browse the files on disk — then pick a range and cut it.
 
-This is a fork of [jo-nike/clipplex](https://github.com/jo-nike/clipplex),
-updated to run on a current Python/Flask stack with a rebuilt interface.
+A SvelteKit application. Originally a Flask app by
+[jo-nike/clipplex](https://github.com/jo-nike/clipplex); this fork has since
+been rewritten.
 
 ## How it works
 
-Clipplex reads your active session from the Plex API, which reports the media's
-**absolute path as Plex sees it**. It hands that path straight to ffmpeg.
+Clipplex shells out to ffmpeg, and for anything that comes from Plex it uses
+the paths **Plex reports**. So the one hard requirement is:
 
-That makes one thing non-negotiable: **the container must see your media at the
-same paths your Plex server does.** If Plex has `/data/movies`, Clipplex needs
-`/data/movies` too — pointing it at the same files under a different path will
-not work.
+> The container must see your media at the same paths your Plex server does.
+
+If Plex has `/data/movies`, Clipplex needs `/data/movies`. Pointing it at the
+same files under a different path will not work. Search results say
+"not reachable" when Plex knows a file Clipplex can't open, which is almost
+always a mount mismatch.
+
+Browsing files has no such constraint — it only ever offers what is under
+`MEDIA_ROOTS`.
 
 ## Configuration
 
-| Variable              | Required | Notes                                                     |
-| --------------------- | -------- | --------------------------------------------------------- |
-| `PLEX_URL`            | yes      | e.g. `http://plex:32400`. See the note below for host networking. |
-| `PLEX_TOKEN`          | yes      | [Finding your token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/) |
-| `PLEX_USERNAME`       | no       | Pre-fills the username field                               |
-| `STREAMABLE_LOGIN`    | no       | Needed only for the Share button                           |
-| `STREAMABLE_PASSWORD` | no       | As above                                                   |
-| `SECRET_KEY`          | no       | Flask session key; a random one is generated if unset      |
-| `TZ`                  | no       | Defaults to `America/Los_Angeles`                          |
+| Variable              | Required | Notes                                                              |
+| --------------------- | -------- | ------------------------------------------------------------------ |
+| `MEDIA_ROOTS`         | no       | Colon-separated directories to browse. Default `/data`              |
+| `CLIPS_DIR`           | no       | Where clips and snapshots are written. Default `/clips`             |
+| `PLEX_URL`            | no       | e.g. `http://plex:32400`. Without it, only the file browser appears |
+| `PLEX_TOKEN`          | no       | [Finding your token](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/) |
+| `PLEX_USERNAME`       | no       | Pre-fills the username field                                        |
+| `STREAMABLE_LOGIN`    | no       | Needed only for the Share button                                    |
+| `STREAMABLE_PASSWORD` | no       | As above                                                            |
+| `PORT` / `HOST`       | no       | Default `5000` on `0.0.0.0`                                         |
+| `TZ`                  | no       | Default `America/Los_Angeles`                                       |
 
-### Volumes
-
-- your media, mounted at **the same paths Plex uses**
-- somewhere for the clips: `/app/app/static/media`
-
-### Port
-
-The app listens on **5000** inside the container (gunicorn).
+Plex is optional. With no `PLEX_URL`/`PLEX_TOKEN` the app still runs, offering
+the file browser alone.
 
 ### Reaching Plex
 
 If Plex runs with `network_mode: host` and Clipplex is on a bridge network,
-`http://plex:32400` will not resolve. Use the Docker bridge gateway instead —
+`http://plex:32400` will not resolve. Use the Docker bridge gateway —
 usually `http://172.17.0.1:32400`.
 
 ## Running it
@@ -60,25 +61,22 @@ services:
       - PLEX_USERNAME=yourplexuser
       - STREAMABLE_LOGIN=${STREAMABLE_LOGIN:-}
       - STREAMABLE_PASSWORD=${STREAMABLE_PASSWORD:-}
-      - TZ=America/Los_Angeles
     volumes:
-      # left side: where the files really are
-      # right side: the paths Plex reports — these must match your Plex container
+      # left: where the files really are
+      # right: the paths Plex reports — these must match your Plex container
       - /mnt/media/TV:/data/tvshows:ro
       - /mnt/media/Movies:/data/movies:ro
-      - /srv/clipplex/media:/app/app/static/media
+      - /srv/clipplex:/clips
     ports:
       - 9945:5000
 ```
 
-Keep secrets in a `.env` file next to the compose file rather than inline:
+Keep secrets in a `.env` beside the compose file rather than inline:
 
 ```bash
 printf 'PLEX_TOKEN=%s\n' "$TOKEN" > .env
 chmod 600 .env
 ```
-
-Then:
 
 ```bash
 docker compose up -d --build clipplex
@@ -86,29 +84,46 @@ docker compose up -d --build clipplex
 
 ## Using it
 
-1. Start playing something in Plex.
-2. Enter your Plex username and press the eye icon — Clipplex shows what's
-   playing and your current position.
-3. **Use as start**, then one of the `+15s` / `+30s` / `+1m` / `+2m` buttons,
-   or type the times in directly.
-4. **Create clip.** It appears in the library below, with its Plex metadata.
-5. Download it, or **Share** to upload to Streamable. The link stays on the
-   card afterwards.
+1. Choose a source: **Now playing**, **Search Plex**, or **Browse files**.
+2. For Now playing, enter your Plex username and press *Check stream*, then
+   *Use as start*. Otherwise pick an item or a file.
+3. Set the times, or use `+15s` / `+30s` / `+1m` / `+2m` from the start.
+4. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
+   bar follows ffmpeg as it cuts.
+5. Download it, make a GIF from it afterwards, or **Share** to upload to
+   Streamable — the link stays on the card.
 
-## Changes in this fork
+## Development
 
-- Runs on Alpine 3.21 / Python 3.12 / Flask 3.1, served by gunicorn
-- Fixed a build that could never start (`FLASK_APP` was set by a no-op `RUN`)
-- Rebuilt the frontend: no Bootstrap or jQuery, responsive, with the clip
-  library as cards showing each clip's metadata
-- Streamable failures report the actual reason instead of a blank 500, and
-  successful uploads keep their link on the card
-- Clip filenames and share titles no longer embed the Plex username
-- The username is configurable rather than hardcoded
+```bash
+npm install
+npm run dev
+```
+
+Point it at real media while developing:
+
+```bash
+MEDIA_ROOTS=/path/to/media CLIPS_DIR=/tmp/clips npm run dev
+```
+
+ffmpeg and ffprobe must be on `PATH`.
+
+## Layout
+
+```
+src/lib/server/    paths, plex, media, clips, ffmpeg, streamable
+src/lib/components/ UI pieces
+src/routes/api/    JSON endpoints; /api/clips streams progress as NDJSON
+src/routes/media/  serves stored clips, with Range support for seeking
+```
+
+Clips are written to `CLIPS_DIR/videos` with a small `.json` sidecar holding
+their metadata, so listing the library costs no ffprobe per clip. Snapshots go
+to `CLIPS_DIR/images`.
 
 ## Credits
 
-Original work by **Jo Nike** — [jo-nike/clipplex](https://github.com/jo-nike/clipplex).
-UI originally based on [Start Bootstrap](https://github.com/startbootstrap/startbootstrap-sb-admin), since replaced.
+Original work by **Jo Nike** —
+[jo-nike/clipplex](https://github.com/jo-nike/clipplex).
 
 Distributed under the MIT License. See the LICENSE file.

@@ -1,18 +1,30 @@
-FROM alpine:3.21
-
-RUN apk --no-cache add tzdata ffmpeg python3 py3-pip
-
-ENV TZ=America/Los_Angeles
-ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=main.py
+# ---- build ----
+FROM node:22-alpine AS build
 
 WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+# ---- run ----
+FROM node:22-alpine
 
-COPY . /app
+RUN apk add --no-cache ffmpeg tzdata
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=build /app/build ./build
+
+ENV HOST=0.0.0.0 \
+    PORT=5000 \
+    TZ=America/Los_Angeles \
+    CLIPS_DIR=/clips \
+    MEDIA_ROOTS=/data
 
 EXPOSE 5000
-
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "900", "main:app"]
+CMD ["node", "build/index.js"]
