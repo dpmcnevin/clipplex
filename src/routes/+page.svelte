@@ -7,6 +7,7 @@
   import PlexSearch from "$lib/components/PlexSearch.svelte";
   import Scrubber from "$lib/components/Scrubber.svelte";
   import TimeRange from "$lib/components/TimeRange.svelte";
+  import { streamJob } from "$lib/ndjson.js";
   import { hideOverlay, overlay, setProgress, showOverlay, showToast } from "$lib/stores.svelte.js";
 
   let { data } = $props();
@@ -17,6 +18,8 @@
   let startParts = $state(["", "", ""]);
   let endParts = $state(["", "", ""]);
   let alsoGif = $state(false);
+  let previewUrl = $state("");
+  let previewKey = $state("");
 
   // Streamable shortcodes are not stored server-side, so keep them here or a
   // reload loses the share URL for good.
@@ -46,6 +49,10 @@
   const startTime = $derived(joined(startParts));
   const endTime = $derived(joined(endParts));
 
+  // A preview belongs to one exact range; changing anything retires it
+  // rather than leaving a stale clip on screen.
+  const rangeKey = $derived(`${selected?.path ?? source}|${startTime}|${endTime}`);
+
   function pickSource(kind) {
     source = kind;
     if (kind === "plex") selected = null;
@@ -69,54 +76,67 @@
     ].map((part) => String(part).padStart(2, "0"));
   }
 
-  async function createClip() {
-    if (!startTime || !endTime) return showToast("Fill in both times.", "error");
-
+  function buildParams() {
+    if (!startTime || !endTime) {
+      showToast("Fill in both times.", "error");
+      return null;
+    }
     const params = new URLSearchParams({ source, start: startTime, end: endTime });
     if (source === "plex") {
-      if (!username.trim()) return showToast("Enter a Plex username first.", "error");
+      if (!username.trim()) {
+        showToast("Enter a Plex username first.", "error");
+        return null;
+      }
       params.set("username", username);
     } else if (source === "item") {
-      if (!selected?.ratingKey) return showToast("Pick something from the search results.", "error");
+      if (!selected?.ratingKey) {
+        showToast("Pick something from the search results.", "error");
+        return null;
+      }
       params.set("rating_key", selected.ratingKey);
     } else {
-      if (!selected?.path) return showToast("Pick a file to clip from.", "error");
+      if (!selected?.path) {
+        showToast("Pick a file to clip from.", "error");
+        return null;
+      }
       params.set("path", selected.path);
     }
+    return params;
+  }
+
+  async function previewRange() {
+    const params = buildParams();
+    if (!params) return;
+    const key = rangeKey;
+
+    showOverlay("Rendering preview…");
+    try {
+      const result = await streamJob(`/api/preview?${params}`, (update) =>
+        setProgress(update.stage, update.progress)
+      );
+      hideOverlay();
+      previewUrl = `/media/${result.previewPath}`;
+      previewKey = key;
+    } catch (error) {
+      hideOverlay();
+      showToast(`Preview failed: ${error.message}`, "error", { sticky: true });
+    }
+  }
+
+  async function createClip() {
+    const params = buildParams();
+    if (!params) return;
     if (alsoGif) params.set("gif", "1");
 
     showOverlay("Creating clip…");
     try {
-      const response = await fetch(`/api/clips?${params}`, { method: "POST" });
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let failure = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const update = JSON.parse(line);
-          if (update.message) failure = update.message;
-          else if (update.result === "success") failure = "";
-          else if (typeof update.progress === "number") {
-            setProgress(update.stage, update.progress);
-            overlay.text = update.stage === "gif" ? "Rendering GIF…" : "Creating clip…";
-          }
-        }
-      }
-
+      await streamJob(`/api/clips?${params}`, (update) => {
+        setProgress(update.stage, update.progress);
+        overlay.text = update.stage === "gif" ? "Rendering GIF…" : "Creating clip…";
+      });
       hideOverlay();
-      if (failure) {
-        showToast(`Clip creation failed: ${failure}`, "error", { sticky: true });
-      } else {
-        await invalidateAll();
-      }
+      previewUrl = "";
+      await invalidateAll();
     } catch (error) {
       hideOverlay();
       showToast(`Clip creation failed: ${error.message}`, "error", { sticky: true });
@@ -253,9 +273,24 @@
     </label>
   </div>
 
-  <button type="button" class="btn btn--primary" onclick={createClip}>
-    <i class="fas fa-hand-scissors"></i> Create clip
-  </button>
+  {#if previewUrl && previewKey === rangeKey}
+    <div class="preview-box">
+      <!-- svelte-ignore a11y_media_has_caption -->
+      <video src={previewUrl} controls autoplay></video>
+      <div class="preview-note">
+        Preview only — 480p draft of {startTime} to {endTime}. Create the clip for full quality.
+      </div>
+    </div>
+  {/if}
+
+  <div class="actions">
+    <button type="button" class="btn btn--ghost" onclick={previewRange}>
+      <i class="fas fa-play"></i> Preview range
+    </button>
+    <button type="button" class="btn btn--primary" onclick={createClip}>
+      <i class="fas fa-hand-scissors"></i> Create clip
+    </button>
+  </div>
 </section>
 
 <h2>Library{#if data.clips.length}{" · " + data.clips.length}{/if}</h2>

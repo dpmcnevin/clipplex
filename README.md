@@ -91,9 +91,12 @@ docker compose up -d --build clipplex
    handle as you move it. Focus a handle and use the arrow keys to nudge by a
    second, or hold shift for ten. The time fields stay in step, so you can
    also type an exact range, or use `+15s` / `+30s` / `+1m` / `+2m`.
-4. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
+4. **Preview range** renders a 480p draft of just that range and plays it
+   inline, so you can check you caught the moment before encoding properly.
+   Drafts are cached and swept after a day.
+5. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
    bar follows ffmpeg as it cuts.
-5. Download it, make a GIF from it afterwards, or **Share** to upload to
+6. Download it, make a GIF from it afterwards, or **Share** to upload to
    Streamable — the link stays on the card.
 
 ## Development

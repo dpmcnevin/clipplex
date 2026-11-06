@@ -5,6 +5,7 @@ import path from "node:path";
 export const CLIPS_DIR = env.CLIPS_DIR || "/clips";
 export const VIDEOS_DIR = path.join(CLIPS_DIR, "videos");
 export const IMAGES_DIR = path.join(CLIPS_DIR, "images");
+export const PREVIEWS_DIR = path.join(CLIPS_DIR, "previews");
 
 export const PLEX_URL = env.PLEX_URL || "";
 export const PLEX_TOKEN = env.PLEX_TOKEN || "";
@@ -40,7 +41,7 @@ export function mediaRoots() {
 }
 
 export function ensureDirs() {
-  for (const dir of [VIDEOS_DIR, IMAGES_DIR]) {
+  for (const dir of [VIDEOS_DIR, IMAGES_DIR, PREVIEWS_DIR]) {
     fs.mkdirSync(dir, { recursive: true });
   }
 }

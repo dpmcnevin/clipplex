@@ -1,7 +1,8 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { IMAGES_DIR, VIDEOS_DIR, ensureDirs } from "./config.js";
+import { IMAGES_DIR, PREVIEWS_DIR, VIDEOS_DIR, ensureDirs } from "./config.js";
 import { ClipError, PathNotAllowed } from "./errors.js";
 import { resolveClipPath, resolveMediaPath, toWebPath } from "./paths.js";
 import { frameRateOf, probe, runWithProgress } from "./ffmpeg.js";
@@ -241,4 +242,68 @@ export async function takeSnapshot(mediaPath, time) {
     path.join(IMAGES_DIR, `${time.replace(/:/g, "_")}_%03d.jpg`)
   ]);
   return frames;
+}
+
+/**
+ * A throwaway, low-resolution render of the chosen range, so the range can
+ * be watched before committing to a full-quality encode. Deliberately cheap:
+ * 480p, veryfast, high CRF. +faststart lets it play before it is fully
+ * fetched.
+ */
+export async function makePreview({ source, start, duration, onProgress }) {
+  ensureDirs();
+  await prunePreviews();
+
+  const key = createHash("sha1")
+    .update(`${source.mediaPath}|${start}|${duration}`)
+    .digest("hex")
+    .slice(0, 16);
+  const output = path.join(PREVIEWS_DIR, `${key}.mp4`);
+
+  // The same range of the same file renders to the same bytes, so reuse it.
+  if (existsSync(output)) {
+    await fs.utimes(output, new Date(), new Date()).catch(() => {});
+    return output;
+  }
+
+  await runWithProgress(
+    [
+      "-y",
+      "-ss", start,
+      "-i", source.mediaPath,
+      "-t", String(duration),
+      "-map_metadata", "-1",
+      "-vf", "scale=480:-2",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-crf", "30",
+      "-c:a", "aac",
+      "-b:a", "96k",
+      "-movflags", "+faststart",
+      output
+    ],
+    { totalSeconds: duration, onProgress }
+  );
+  return output;
+}
+
+/** Previews are disposable; drop anything left from a previous day. */
+async function prunePreviews() {
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  let names = [];
+  try {
+    names = await fs.readdir(PREVIEWS_DIR);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    names.map(async (name) => {
+      const full = path.join(PREVIEWS_DIR, name);
+      try {
+        if ((await fs.stat(full)).mtimeMs < cutoff) await fs.rm(full, { force: true });
+      } catch {
+        // Already gone.
+      }
+    })
+  );
 }
