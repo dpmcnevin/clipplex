@@ -11,9 +11,11 @@ const lastLine = (text) => {
  * full of spaces, apostrophes and parentheses, all of which a shell would
  * split or interpret.
  */
-export function run(bin, args) {
+export function run(bin, args, { nice } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args);
+    // Background work (subtitle indexing) runs behind Plex, which transcodes
+    // on the same machine.
+    const child = nice ? spawn("nice", ["-n", String(nice), bin, ...args]) : spawn(bin, args);
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -54,14 +56,14 @@ export function runWithProgress(args, { totalSeconds = 0, onProgress } = {}) {
   });
 }
 
-export async function probe(file) {
+export async function probe(file, options) {
   const { stdout } = await run("ffprobe", [
     "-v", "error",
     "-print_format", "json",
     "-show_format",
     "-show_streams",
     file
-  ]);
+  ], options);
   return JSON.parse(stdout);
 }
 

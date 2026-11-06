@@ -11,6 +11,24 @@ import { secondsToTime } from "./time.js";
 const TEXT_CODECS = new Set(["subrip", "ass", "ssa", "mov_text", "webvtt", "text"]);
 const BITMAP_CODECS = new Set(["hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"]);
 
+// A sidecar is a few kilobytes of text, so it costs nothing next to demuxing
+// a multi-gigabyte container. .idx/.sub are VobSub, which are images.
+const SIDECAR_EXTENSIONS = [".srt", ".ass", ".ssa", ".vtt"];
+
+function sidecarFor(mediaPath) {
+  const stem = mediaPath.replace(/\.[^.]+$/, "");
+  for (const ext of SIDECAR_EXTENSIONS) {
+    for (const candidate of [stem + ext, stem + ".en" + ext, stem + ".eng" + ext]) {
+      try {
+        if (statSync(candidate).isFile()) return candidate;
+      } catch {
+        // Next candidate.
+      }
+    }
+  }
+  return null;
+}
+
 const cacheDir = () => path.join(CLIPS_DIR, "subs");
 
 /**
@@ -20,15 +38,29 @@ const cacheDir = () => path.join(CLIPS_DIR, "subs");
  * pictures of words, so they are reported as unsearchable rather than
  * silently returning nothing.
  */
-export async function subtitleTrack(mediaPath) {
-  let streams = [];
+export async function subtitleTrack(mediaPath, options) {
+  const sidecar = sidecarFor(mediaPath);
+  if (sidecar) {
+    return { available: true, sidecar, codec: path.extname(sidecar).slice(1), language: "", ordinal: -1 };
+  }
+
+  let subtitles = [];
   try {
-    streams = (await probe(mediaPath)).streams ?? [];
+    // Only the subtitle stream list is needed, and the probe is capped: the
+    // default scan reads far more of the file than this question requires.
+    const { stdout } = await run("ffprobe", [
+      "-v", "error",
+      "-analyzeduration", "1M",
+      "-probesize", "2M",
+      "-select_streams", "s",
+      "-show_entries", "stream=codec_name:stream_tags=language,title",
+      "-print_format", "json",
+      mediaPath
+    ], options);
+    subtitles = JSON.parse(stdout).streams ?? [];
   } catch (error) {
     return { available: false, reason: `Could not read this file: ${error.message}` };
   }
-
-  const subtitles = streams.filter((stream) => stream.codec_type === "subtitle");
   if (!subtitles.length) {
     return { available: false, reason: "This file has no subtitle track." };
   }
@@ -90,8 +122,8 @@ function parseSrt(text) {
 }
 
 /** Extract the track once and keep the parsed cues beside the clips. */
-export async function cuesFor(mediaPath) {
-  const track = await subtitleTrack(mediaPath);
+export async function cuesFor(mediaPath, options, known) {
+  const track = known ?? (await subtitleTrack(mediaPath, options));
   if (!track.available) return track;
 
   ensureDirs();
@@ -106,7 +138,7 @@ export async function cuesFor(mediaPath) {
     }
   })();
   const key = createHash("sha1")
-    .update(`${mediaPath}|${stamp}|${track.ordinal}`)
+    .update(`${mediaPath}|${stamp}|${track.sidecar ?? track.ordinal}`)
     .digest("hex")
     .slice(0, 16);
   const cachePath = path.join(cacheDir(), `${key}.json`);
@@ -118,6 +150,23 @@ export async function cuesFor(mediaPath) {
   }
 
   let srt;
+  if (track.sidecar) {
+    try {
+      srt = /\.srt$/i.test(track.sidecar)
+        ? await fs.readFile(track.sidecar, "utf8")
+        : (await run("ffmpeg", ["-nostdin", "-v", "error", "-i", track.sidecar, "-f", "srt", "-"], options)).stdout;
+    } catch (error) {
+      throw new ClipError(`Could not read ${path.basename(track.sidecar)}: ${error.message}`);
+    }
+    const cues = parseSrt(srt);
+    try {
+      await fs.writeFile(cachePath, JSON.stringify(cues));
+    } catch {
+      // Cache is optional.
+    }
+    return { ...track, cues };
+  }
+
   try {
     // Copy the text out; no decoding or re-encoding of the video involved.
     ({ stdout: srt } = await run("ffmpeg", [
@@ -125,7 +174,7 @@ export async function cuesFor(mediaPath) {
       "-i", mediaPath,
       "-map", `0:s:${track.ordinal}`,
       "-f", "srt", "-"
-    ]));
+    ], options));
   } catch (error) {
     throw new ClipError(`Could not read the subtitles: ${error.message}`);
   }

@@ -104,6 +104,26 @@ docker compose up -d --build clipplex
 7. Download it, make a GIF from it afterwards, or **Share** to upload to
    Streamable — the link stays on the card.
 
+## Searching the whole library
+
+The **Quotes** tab searches subtitles across everything, once an index has
+been built. Building it reads the subtitles out of every file, which is a
+one-time job measured in hours for a large library: extraction has to demux
+the whole container, so it costs roughly 4.5 seconds per gigabyte.
+
+It is built to survive that. Files are indexed smallest first, so episodes
+land long before the big remuxes and the index is useful early; progress is
+saved every 50 files, so stopping and continuing loses nothing; a file whose
+size and mtime are unchanged is skipped on later runs; and ffmpeg runs at
+`nice 15` with one worker, to stay behind a Plex transcode on the same box
+and avoid thrashing a single spindle.
+
+**Sidecar subtitles are free.** A `.srt`, `.ass`, `.ssa` or `.vtt` beside the
+media is read directly — kilobytes instead of gigabytes — so a library kept
+populated by something like [Bazarr](https://www.bazarr.media/) indexes almost
+instantly. `.idx`/`.sub` (VobSub) and embedded PGS are images, not text, and
+are reported as unsearchable rather than silently returning nothing.
+
 ## Development
 
 ```bash

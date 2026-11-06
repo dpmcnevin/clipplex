@@ -6,6 +6,7 @@
   import FileBrowser from "$lib/components/FileBrowser.svelte";
   import NowPlaying from "$lib/components/NowPlaying.svelte";
   import PlexSearch from "$lib/components/PlexSearch.svelte";
+  import QuoteSearch from "$lib/components/QuoteSearch.svelte";
   import Scrubber from "$lib/components/Scrubber.svelte";
   import TimeRange from "$lib/components/TimeRange.svelte";
   import { streamJob } from "$lib/ndjson.js";
@@ -67,6 +68,20 @@
     );
   };
 
+  async function pickQuote(hit) {
+    let duration = 0;
+    let meta = "";
+    try {
+      const info = await (await fetch(`/api/media-info?path=${encodeURIComponent(hit.path)}`)).json();
+      duration = info.duration ?? 0;
+      meta = info.durationStr ?? "";
+    } catch {
+      // Without a duration the scrubber stays hidden, but the range still works.
+    }
+    selected = { label: hit.title, meta, path: hit.path, duration };
+    jumpToCue(hit);
+  }
+
   function jumpToCue(cue) {
     const start = Math.max(0, Math.floor(cue.start) - 1);
     const end = Math.ceil(cue.end) + 1;
@@ -113,9 +128,10 @@
       params.set("rating_key", selected.ratingKey);
     } else {
       if (!selected?.path) {
-        showToast("Pick a file to clip from.", "error");
+        showToast("Pick something to clip from.", "error");
         return null;
       }
+      params.set("source", "file");
       params.set("path", selected.path);
     }
     return params;
@@ -244,8 +260,11 @@
         <button type="button" class="tab" class:active={source === "item"} onclick={() => pickSource("item")}>
           <i class="fas fa-search"></i> Search
         </button>
+        <button type="button" class="tab" class:active={source === "quote"} onclick={() => pickSource("quote")}>
+          <i class="fas fa-quote-left"></i> Quotes
+        </button>
         <button type="button" class="tab" class:active={source === "plex"} onclick={() => pickSource("plex")}>
-          <i class="fas fa-play-circle"></i> Now playing
+          <i class="fas fa-play-circle"></i> Playing
         </button>
       {/if}
       <button type="button" class="tab" class:active={source === "file"} onclick={() => pickSource("file")}>
@@ -257,6 +276,8 @@
       <NowPlaying bind:username onUseTime={useStartTime} onPick={(pick) => (selected = pick)} />
     {:else if source === "item"}
       <PlexSearch onPick={(pick) => (selected = pick)} />
+    {:else if source === "quote"}
+      <QuoteSearch onPick={pickQuote} />
     {:else}
       <FileBrowser onPick={(pick) => (selected = pick)} />
     {/if}

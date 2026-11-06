@@ -1438,3 +1438,55 @@ input[type="text"]::placeholder {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+
+/* ---------- library quote search ---------- */
+
+.tabs {
+  grid-auto-flow: unset;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+}
+
+.index-bar {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 13px;
+  margin-bottom: 12px;
+}
+
+.index-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.index-sub {
+  color: var(--text-faint);
+  font-size: 11.5px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.index-progress {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.quote-where {
+  display: block;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-where .cue-time {
+  margin-right: 7px;
+}
