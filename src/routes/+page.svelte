@@ -12,7 +12,7 @@
 
   let { data } = $props();
 
-  let source = $state(data.hasPlex ? "plex" : "file");
+  let source = $state(data.hasPlex ? "item" : "file");
   let username = $state(data.defaultUsername);
   let selected = $state(null);
   let startParts = $state(["", "", ""]);
@@ -225,11 +225,11 @@
 
     <div class="tabs">
       {#if data.hasPlex}
-        <button type="button" class="tab" class:active={source === "plex"} onclick={() => pickSource("plex")}>
-          <i class="fas fa-play-circle"></i> Now playing
-        </button>
         <button type="button" class="tab" class:active={source === "item"} onclick={() => pickSource("item")}>
           <i class="fas fa-search"></i> Search
+        </button>
+        <button type="button" class="tab" class:active={source === "plex"} onclick={() => pickSource("plex")}>
+          <i class="fas fa-play-circle"></i> Now playing
         </button>
       {/if}
       <button type="button" class="tab" class:active={source === "file"} onclick={() => pickSource("file")}>
