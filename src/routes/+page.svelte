@@ -258,7 +258,15 @@
     {/if}
 
     {#if selected?.path && selected?.duration}
-      <Scrubber path={selected.path} duration={selected.duration} bind:startParts bind:endParts />
+      <Scrubber
+        path={selected.path}
+        duration={selected.duration}
+        bind:startParts
+        bind:endParts
+        previewUrl={previewKey === rangeKey ? previewUrl : ""}
+        onPlay={previewRange}
+        onClearPreview={() => (previewUrl = "")}
+      />
     {:else}
       <div class="placeholder">
         <i class="fas fa-crop-alt"></i>
@@ -278,17 +286,6 @@
         </div>
       </TimeRange>
     </div>
-
-    {#if previewUrl && previewKey === rangeKey}
-      <div class="trim-divider"></div>
-      <div class="preview-box">
-        <!-- svelte-ignore a11y_media_has_caption -->
-        <video src={previewUrl} controls autoplay></video>
-        <div class="preview-note">
-          Draft at 480p, {startTime} to {endTime}. Create the clip for full quality.
-        </div>
-      </div>
-    {/if}
 
     <div class="trim-divider"></div>
 

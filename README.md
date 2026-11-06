@@ -92,9 +92,9 @@ docker compose up -d --build clipplex
    its length, or pick a preset length (5s to 5m). Focus a handle and use the
    arrow keys to nudge by a second, or hold shift for ten. The time fields
    stay in step, so you can also type an exact range.
-4. **Preview range** renders a 480p draft of just that range and plays it
-   inline, so you can check you caught the moment before encoding properly.
-   Drafts are cached and swept after a day.
+4. Click the frame (or **Preview range**) to render a 480p draft of just that
+   range and play it in place, so you can check you caught the moment before
+   encoding properly. Drafts are cached and swept after a day.
 5. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
    bar follows ffmpeg as it cuts.
 6. Download it, make a GIF from it afterwards, or **Share** to upload to

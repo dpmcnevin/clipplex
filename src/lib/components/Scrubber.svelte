@@ -11,7 +11,15 @@
    * Source media is often MKV or HEVC, which a browser will not play, so the
    * frames come from ffmpeg rather than a <video> element.
    */
-  let { path, duration = 0, startParts = $bindable(), endParts = $bindable() } = $props();
+  let {
+    path,
+    duration = 0,
+    startParts = $bindable(),
+    endParts = $bindable(),
+    previewUrl = "",
+    onPlay,
+    onClearPreview
+  } = $props();
 
   let detail = $state(null);
   let overview = $state(null);
@@ -212,10 +220,35 @@
 {#if duration > 0}
   <div class="scrubber">
     <div class="scrub-preview">
-      {#if previewSrc}
-        <img src={previewSrc} alt="Frame at {fmt(previewFor)}" />
+      {#if previewUrl}
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video src={previewUrl} controls autoplay></video>
+        <span class="scrub-badge">Draft · {fmt(inSec)} → {fmt(outSec)}</span>
+        <button
+          type="button"
+          class="scrub-exit"
+          aria-label="Back to frames"
+          title="Back to frames"
+          onclick={() => onClearPreview?.()}
+        >
+          <i class="fas fa-times"></i>
+        </button>
+      {:else}
+        {#if previewSrc}
+          <img src={previewSrc} alt="Frame at {fmt(previewFor)}" />
+        {/if}
+        <span class="scrub-badge">{active === "in" ? "In" : "Out"} · {fmt(previewFor)}</span>
+        <!-- the still is the preview slot, so clicking it plays the range here -->
+        <button
+          type="button"
+          class="scrub-play"
+          aria-label="Play this range"
+          title="Play this range"
+          onclick={() => onPlay?.()}
+        >
+          <i class="fas fa-play"></i>
+        </button>
       {/if}
-      <span class="scrub-badge">{active === "in" ? "In" : "Out"} · {fmt(previewFor)}</span>
     </div>
 
     <!-- whole file: jump anywhere -->
