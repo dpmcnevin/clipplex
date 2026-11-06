@@ -219,24 +219,24 @@
 
 <h1>Clips</h1>
 
-<section class="card">
-  <h2>New clip</h2>
+<div class="workspace">
+  <section class="card">
+    <h2>Source</h2>
 
-  <div class="tabs">
-    {#if data.hasPlex}
-      <button type="button" class="tab" class:active={source === "plex"} onclick={() => pickSource("plex")}>
-        <i class="fas fa-play-circle"></i> Now playing
+    <div class="tabs">
+      {#if data.hasPlex}
+        <button type="button" class="tab" class:active={source === "plex"} onclick={() => pickSource("plex")}>
+          <i class="fas fa-play-circle"></i> Now playing
+        </button>
+        <button type="button" class="tab" class:active={source === "item"} onclick={() => pickSource("item")}>
+          <i class="fas fa-search"></i> Search
+        </button>
+      {/if}
+      <button type="button" class="tab" class:active={source === "file"} onclick={() => pickSource("file")}>
+        <i class="fas fa-folder-open"></i> Files
       </button>
-      <button type="button" class="tab" class:active={source === "item"} onclick={() => pickSource("item")}>
-        <i class="fas fa-search"></i> Search Plex
-      </button>
-    {/if}
-    <button type="button" class="tab" class:active={source === "file"} onclick={() => pickSource("file")}>
-      <i class="fas fa-folder-open"></i> Browse files
-    </button>
-  </div>
+    </div>
 
-  <div class="panel">
     {#if source === "plex"}
       <NowPlaying bind:username onUseTime={useStartTime} onPick={(pick) => (selected = pick)} />
     {:else if source === "item"}
@@ -244,62 +244,73 @@
     {:else}
       <FileBrowser onPick={(pick) => (selected = pick)} />
     {/if}
-  </div>
+  </section>
 
-  {#if selected}
-    <div class="selected">
-      <i class="fas fa-film"></i>
-      <span style="flex:1; min-width:0;">{selected.label}</span>
-      <span class="clip-sub">{selected.meta}</span>
-    </div>
-  {/if}
+  <section class="card">
+    <h2>Trim</h2>
 
-  {#if selected?.path && selected?.duration}
-    <Scrubber
-      path={selected.path}
-      duration={selected.duration}
-      bind:startParts
-      bind:endParts
-    />
-  {/if}
-
-  <TimeRange label="Start" bind:parts={startParts} />
-
-  <TimeRange label="End" bind:parts={endParts}>
-    <div class="chips">
-      {#each [[15, "+15s"], [30, "+30s"], [60, "+1m"], [120, "+2m"]] as [seconds, label]}
-        <button type="button" class="chip" onclick={() => addToEnd(seconds)}>{label}</button>
-      {/each}
-    </div>
-  </TimeRange>
-
-  <div class="field">
-    <label class="checkbox">
-      <input type="checkbox" bind:checked={alsoGif} /> Also make a GIF
-    </label>
-  </div>
-
-  {#if previewUrl && previewKey === rangeKey}
-    <div class="preview-box">
-      <!-- svelte-ignore a11y_media_has_caption -->
-      <video src={previewUrl} controls autoplay></video>
-      <div class="preview-note">
-        Preview only — 480p draft of {startTime} to {endTime}. Create the clip for full quality.
+    {#if selected}
+      <div class="selected">
+        <i class="fas fa-film"></i>
+        <span style="flex:1; min-width:0;">{selected.label}</span>
+        <span class="clip-sub">{selected.meta}</span>
       </div>
+    {/if}
+
+    {#if selected?.path && selected?.duration}
+      <Scrubber path={selected.path} duration={selected.duration} bind:startParts bind:endParts />
+    {:else}
+      <div class="placeholder">
+        <i class="fas fa-crop-alt"></i>
+        <span>Pick something on the left and its frames appear here to scrub through.</span>
+      </div>
+    {/if}
+
+    <div class="trim-divider"></div>
+
+    <div class="times">
+      <TimeRange label="Start" bind:parts={startParts} />
+      <TimeRange label="End" bind:parts={endParts}>
+        <div class="chips">
+          {#each [[15, "+15s"], [30, "+30s"], [60, "+1m"], [120, "+2m"]] as [seconds, label]}
+            <button type="button" class="chip" onclick={() => addToEnd(seconds)}>{label}</button>
+          {/each}
+        </div>
+      </TimeRange>
     </div>
-  {/if}
 
-  <div class="actions">
-    <button type="button" class="btn btn--ghost" onclick={previewRange}>
-      <i class="fas fa-play"></i> Preview range
-    </button>
-    <button type="button" class="btn btn--primary" onclick={createClip}>
-      <i class="fas fa-hand-scissors"></i> Create clip
-    </button>
-  </div>
-</section>
+    {#if previewUrl && previewKey === rangeKey}
+      <div class="trim-divider"></div>
+      <div class="preview-box">
+        <!-- svelte-ignore a11y_media_has_caption -->
+        <video src={previewUrl} controls autoplay></video>
+        <div class="preview-note">
+          Draft at 480p, {startTime} to {endTime}. Create the clip for full quality.
+        </div>
+      </div>
+    {/if}
 
-<h2>Library{#if data.clips.length}{" · " + data.clips.length}{/if}</h2>
+    <div class="trim-divider"></div>
+
+    <div class="actions">
+      <label class="checkbox">
+        <input type="checkbox" bind:checked={alsoGif} /> Also make a GIF
+      </label>
+      <span style="flex:1"></span>
+      <button type="button" class="btn btn--ghost" onclick={previewRange}>
+        <i class="fas fa-play"></i> Preview range
+      </button>
+      <button type="button" class="btn btn--primary" onclick={createClip}>
+        <i class="fas fa-hand-scissors"></i> Create clip
+      </button>
+    </div>
+  </section>
+</div>
+
+<div class="section-head">
+  <h2>Library</h2>
+  {#if data.clips.length}<span class="count-pill">{data.clips.length}</span>{/if}
+</div>
 
 {#if data.clips.length}
   <div class="clips">
@@ -318,6 +329,6 @@
 {:else}
   <div class="empty">
     <i class="fas fa-film"></i>
-    No clips yet. Pick something above — what's playing in Plex, a search result, or a file on disk.
+    No clips yet. Choose a source, set a range, and create one.
   </div>
 {/if}

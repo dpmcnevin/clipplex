@@ -44,7 +44,10 @@
   {/if}
 </section>
 
-<h2>Gallery{#if data.images.length}{" · " + data.images.length}{/if}</h2>
+<div class="section-head">
+  <h2>Gallery</h2>
+  {#if data.images.length}<span class="count-pill">{data.images.length}</span>{/if}
+</div>
 
 {#if data.images.length}
   <div class="shots">
