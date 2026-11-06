@@ -1,7 +1,7 @@
 <script>
   import { showToast } from "$lib/stores.svelte.js";
 
-  let { username = $bindable(""), onUseTime } = $props();
+  let { username = $bindable(""), onUseTime, onPick } = $props();
 
   let state = $state({ shown: false, error: false, title: "", time: "" });
 
@@ -13,9 +13,19 @@
     try {
       const response = await fetch(`/api/stream?username=${encodeURIComponent(username)}`);
       const data = await response.json();
-      state = data.message
-        ? { shown: true, error: true, title: data.message, time: "" }
-        : { shown: true, error: false, title: data.show ? `${data.show} — ${data.title}` : data.title, time: data.currentTime };
+      if (data.message) {
+        state = { shown: true, error: true, title: data.message, time: "" };
+        onPick(null);
+        return;
+      }
+      const label = data.show ? `${data.show} — ${data.title}` : data.title;
+      state = { shown: true, error: false, title: label, time: data.currentTime };
+      onPick({
+        label,
+        meta: data.durationStr,
+        path: data.path,
+        duration: data.reachable ? data.duration : 0
+      });
     } catch (error) {
       showToast(`Could not reach the server: ${error.message}`, "error");
     }

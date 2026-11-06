@@ -87,7 +87,10 @@ docker compose up -d --build clipplex
 1. Choose a source: **Now playing**, **Search Plex**, or **Browse files**.
 2. For Now playing, enter your Plex username and press *Check stream*, then
    *Use as start*. Otherwise pick an item or a file.
-3. Set the times, or use `+15s` / `+30s` / `+1m` / `+2m` from the start.
+3. Drag the in and out handles on the scrubber — it shows the frame under the
+   handle as you move it. Focus a handle and use the arrow keys to nudge by a
+   second, or hold shift for ten. The time fields stay in step, so you can
+   also type an exact range, or use `+15s` / `+30s` / `+1m` / `+2m`.
 4. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
    bar follows ffmpeg as it cuts.
 5. Download it, make a GIF from it afterwards, or **Share** to upload to
@@ -116,6 +119,11 @@ src/lib/components/ UI pieces
 src/routes/api/    JSON endpoints; /api/clips streams progress as NDJSON
 src/routes/media/  serves stored clips, with Range support for seeking
 ```
+
+Scrubber previews come from `/api/frame`, which pulls a single frame with
+ffmpeg. `-ss` goes before `-i` so it seeks by index instead of decoding up to
+the timestamp: about 200ms at any point of a 45-minute file. That also means
+previews work for sources a browser could never play, like MKV or HEVC.
 
 Clips are written to `CLIPS_DIR/videos` with a small `.json` sidecar holding
 their metadata, so listing the library costs no ffprobe per clip. Snapshots go

@@ -58,6 +58,7 @@ function describe(video) {
     season: isEpisode ? String(video.parentIndex ?? "") : "",
     episode: isEpisode ? String(video.index ?? "") : "",
     year: video.year ? String(video.year) : "",
+    duration: Number(video.duration ?? 0) / 1000,
     durationStr: msToTime(Number(video.duration ?? 0)),
     path: mediaPath,
     reachable

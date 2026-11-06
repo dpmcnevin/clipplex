@@ -78,3 +78,39 @@ export async function frameRateOf(file) {
   const fps = den ? num / den : Number(num);
   return Number.isFinite(fps) && fps > 0 ? Math.round(fps) : 24;
 }
+
+/** Like run(), but collects stdout as binary. */
+export function runBinary(bin, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(bin, args);
+    const chunks = [];
+    let stderr = "";
+    child.stdout.on("data", (chunk) => chunks.push(chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("error", (error) => reject(new ClipError(`${bin} could not run: ${error.message}`)));
+    child.on("close", (code) =>
+      code === 0
+        ? resolve(Buffer.concat(chunks))
+        : reject(new ClipError(lastLine(stderr) || `${bin} exited with ${code}`))
+    );
+  });
+}
+
+/**
+ * A single frame as JPEG. -ss goes before -i so ffmpeg seeks by index rather
+ * than decoding up to the timestamp, which keeps this fast even on a long
+ * file, and works whatever the container or codec is.
+ */
+export function frameAt(file, seconds, width = 480) {
+  return runBinary("ffmpeg", [
+    "-nostdin",
+    "-ss", String(Math.max(0, seconds)),
+    "-i", file,
+    "-frames:v", "1",
+    "-vf", `scale=${width}:-1`,
+    "-f", "image2",
+    "-c:v", "mjpeg",
+    "-q:v", "4",
+    "pipe:1"
+  ]);
+}

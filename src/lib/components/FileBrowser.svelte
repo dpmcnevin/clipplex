@@ -39,7 +39,8 @@
       onPick({
         label: file.name,
         meta: response.ok ? data.durationStr : data.message || "",
-        path: file.path
+        path: file.path,
+        duration: response.ok ? data.duration : 0
       });
     } catch {
       onPick({ label: file.name, meta: "", path: file.path });

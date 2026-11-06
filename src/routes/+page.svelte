@@ -5,6 +5,7 @@
   import FileBrowser from "$lib/components/FileBrowser.svelte";
   import NowPlaying from "$lib/components/NowPlaying.svelte";
   import PlexSearch from "$lib/components/PlexSearch.svelte";
+  import Scrubber from "$lib/components/Scrubber.svelte";
   import TimeRange from "$lib/components/TimeRange.svelte";
   import { hideOverlay, overlay, setProgress, showOverlay, showToast } from "$lib/stores.svelte.js";
 
@@ -211,7 +212,7 @@
 
   <div class="panel">
     {#if source === "plex"}
-      <NowPlaying bind:username onUseTime={useStartTime} />
+      <NowPlaying bind:username onUseTime={useStartTime} onPick={(pick) => (selected = pick)} />
     {:else if source === "item"}
       <PlexSearch onPick={(pick) => (selected = pick)} />
     {:else}
@@ -225,6 +226,15 @@
       <span style="flex:1; min-width:0;">{selected.label}</span>
       <span class="clip-sub">{selected.meta}</span>
     </div>
+  {/if}
+
+  {#if selected?.path && selected?.duration}
+    <Scrubber
+      path={selected.path}
+      duration={selected.duration}
+      bind:startParts
+      bind:endParts
+    />
   {/if}
 
   <TimeRange label="Start" bind:parts={startParts} />

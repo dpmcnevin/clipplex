@@ -39,7 +39,13 @@
 
   function pick(item) {
     pickedKey = item.ratingKey;
-    onPick({ label: labelFor(item), meta: item.durationStr, ratingKey: item.ratingKey });
+    onPick({
+      label: labelFor(item),
+      meta: item.durationStr,
+      ratingKey: item.ratingKey,
+      path: item.path,
+      duration: item.duration
+    });
   }
 </script>
 
