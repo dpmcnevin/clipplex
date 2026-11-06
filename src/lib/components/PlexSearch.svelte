@@ -77,12 +77,21 @@
         class:picked={pickedKey === item.ratingKey}
         class:picker-row--off={!item.reachable}
         disabled={!item.reachable}
-        title={item.reachable ? "" : `Plex knows this file but Clipplex cannot see it at ${item.path}`}
         onclick={() => pick(item)}
       >
         <i class="fas {item.show ? 'fa-tv' : 'fa-film'}"></i>
-        <span class="picker-name">{labelFor(item)}</span>
-        <span class="picker-meta">{item.reachable ? item.durationStr : "not reachable"}</span>
+        <span class="picker-name">
+          {labelFor(item)}
+          {#if !item.reachable}
+            <!-- A tooltip is invisible on touch, and this is the one message
+                 that explains a mount mismatch. -->
+            <span class="picker-reason">
+              Plex has this at {item.path}, which Clipplex cannot see — check
+              that both containers mount the media at the same paths.
+            </span>
+          {/if}
+        </span>
+        <span class="picker-meta">{item.reachable ? item.durationStr : "unavailable"}</span>
       </button>
     {/each}
   </div>

@@ -925,3 +925,38 @@ input[type="text"]:focus {
   font-size: 13px;
   margin-right: 2px;
 }
+
+/* ---------- clip facts and new-clip highlight ---------- */
+
+.clip-facts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.clip-facts .fact {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.clip--new {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 163, 61, 0.18);
+}
+
+.picker-reason {
+  display: block;
+  white-space: normal;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.picker-row--off .picker-name {
+  white-space: normal;
+}

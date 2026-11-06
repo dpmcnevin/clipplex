@@ -20,6 +20,7 @@
   let alsoGif = $state(false);
   let previewUrl = $state("");
   let previewKey = $state("");
+  let justCreated = $state("");
 
   // Streamable shortcodes are not stored server-side, so keep them here or a
   // reload loses the share URL for good.
@@ -130,13 +131,16 @@
 
     showOverlay("Creating clip…");
     try {
-      await streamJob(`/api/clips?${params}`, (update) => {
+      const result = await streamJob(`/api/clips?${params}`, (update) => {
         setProgress(update.stage, update.progress);
         overlay.text = update.stage === "gif" ? "Rendering GIF…" : "Creating clip…";
       });
       hideOverlay();
       previewUrl = "";
       await invalidateAll();
+      justCreated = result.filePath ?? "";
+      showToast(alsoGif ? "Clip and GIF created." : "Clip created.", "ok");
+      setTimeout(() => (justCreated = ""), 6000);
     } catch (error) {
       hideOverlay();
       showToast(`Clip creation failed: ${error.message}`, "error", { sticky: true });
@@ -154,6 +158,7 @@
       if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
       hideOverlay();
       await invalidateAll();
+      showToast("GIF ready.", "ok");
     } catch (error) {
       hideOverlay();
       showToast(`GIF failed: ${error.message}`, "error", { sticky: true });
@@ -172,6 +177,7 @@
       if (!response.ok) throw new Error(result.message || `HTTP ${response.status}`);
       hideOverlay();
       await invalidateAll();
+      showToast("Clip deleted.", "ok");
     } catch (error) {
       hideOverlay();
       showToast(`Could not delete the clip: ${error.message}`, "error");
@@ -301,6 +307,7 @@
       <ClipCard
         {clip}
         shareUrl={shares[clip.filePath] ?? ""}
+        isNew={clip.filePath === justCreated}
         onDelete={removeClip}
         onGif={makeGif}
         onShare={share}

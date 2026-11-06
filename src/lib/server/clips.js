@@ -5,12 +5,13 @@ import path from "node:path";
 import { IMAGES_DIR, PREVIEWS_DIR, VIDEOS_DIR, ensureDirs } from "./config.js";
 import { ClipError, PathNotAllowed } from "./errors.js";
 import { resolveClipPath, resolveMediaPath, toWebPath } from "./paths.js";
-import { frameRateOf, probe, runWithProgress } from "./ffmpeg.js";
+import { frameAt, frameRateOf, probe, runWithProgress } from "./ffmpeg.js";
 import { secondsToTime } from "./time.js";
 import * as plex from "./plex.js";
 
 const sidecarFor = (clipPath) => clipPath.replace(/\.mp4$/i, ".json");
 const gifFor = (clipPath) => clipPath.replace(/\.mp4$/i, ".gif");
+const posterFor = (clipPath) => clipPath.replace(/\.mp4$/i, ".jpg");
 
 const tidy = (text) => text.replace(/[._]+/g, " ").replace(/^[\s\-_.]+|[\s\-_.]+$/g, "");
 
@@ -102,6 +103,8 @@ export async function cutClip({ source, start, duration, onProgress }) {
     { totalSeconds: duration, onProgress }
   );
 
+  await makePoster(output, duration);
+
   await writeSidecar(output, {
     title: source.title,
     show: source.show,
@@ -165,28 +168,50 @@ async function writeSidecar(clipPath, meta) {
  * for an ffprobe per clip on every page load.
  */
 export async function metadataFor(clipPath) {
+  let meta = null;
   try {
-    return JSON.parse(await fs.readFile(sidecarFor(clipPath), "utf8"));
+    meta = JSON.parse(await fs.readFile(sidecarFor(clipPath), "utf8"));
   } catch {
     // Fall through to probing.
   }
 
-  let tags = {};
+  if (meta && meta.durationStr) return meta;
+
+  let format = {};
   try {
-    tags = (await probe(clipPath))?.format?.tags ?? {};
+    format = (await probe(clipPath))?.format ?? {};
   } catch {
-    tags = {};
+    format = {};
   }
-  const meta = {
-    title: tags.title ?? "",
-    show: tags.show ?? "",
-    season: tags.season_number ?? "",
-    episode: tags.episode_id ?? "",
-    sourceTime: tags.comment ?? "",
-    username: tags.artist ?? ""
+  const tags = format.tags ?? {};
+  const duration = Number(format.duration ?? 0);
+
+  meta = {
+    title: meta?.title ?? tags.title ?? "",
+    show: meta?.show ?? tags.show ?? "",
+    season: meta?.season ?? tags.season_number ?? "",
+    episode: meta?.episode ?? tags.episode_id ?? "",
+    sourceTime: meta?.sourceTime ?? tags.comment ?? "",
+    username: meta?.username ?? tags.artist ?? "",
+    duration,
+    durationStr: secondsToTime(duration)
   };
   await writeSidecar(clipPath, meta);
   return meta;
+}
+
+/**
+ * A still for the clip card, so the library can load with preload="none"
+ * instead of asking the server for metadata on every clip at once.
+ */
+export async function makePoster(clipPath, duration = 0) {
+  const at = duration > 2 ? 1 : Math.max(0, duration / 2);
+  try {
+    await fs.writeFile(posterFor(clipPath), await frameAt(clipPath, at, 640));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function listClips() {
@@ -199,16 +224,35 @@ export async function listClips() {
         const full = path.join(VIDEOS_DIR, name);
         const [meta, stat] = await Promise.all([metadataFor(full), fs.stat(full)]);
         const gif = gifFor(full);
+        const poster = posterFor(full);
         return {
           ...meta,
           filePath: toWebPath(full),
           gifPath: existsSync(gif) ? toWebPath(gif) : "",
+          posterPath: existsSync(poster) ? toWebPath(poster) : "",
+          fullPath: full,
           size: stat.size,
           mtime: stat.mtimeMs
         };
       })
   );
-  return clips.sort((a, b) => b.mtime - a.mtime);
+
+  clips.sort((a, b) => b.mtime - a.mtime);
+
+  // Clips made before posters existed get one here, a few per request so a
+  // large library converges over a couple of loads rather than spawning an
+  // ffmpeg per clip at once.
+  let budget = 5;
+  for (const clip of clips) {
+    if (clip.posterPath || budget <= 0) continue;
+    budget -= 1;
+    if (await makePoster(clip.fullPath, clip.duration ?? 0)) {
+      clip.posterPath = toWebPath(posterFor(clip.fullPath));
+    }
+  }
+  for (const clip of clips) delete clip.fullPath;
+
+  return clips;
 }
 
 export async function deleteClip(relativePath) {
@@ -217,6 +261,7 @@ export async function deleteClip(relativePath) {
   // A clip owns its GIF and its sidecar.
   await Promise.all([
     fs.rm(gifFor(full), { force: true }),
+    fs.rm(posterFor(full), { force: true }),
     fs.rm(sidecarFor(full), { force: true })
   ]);
 }

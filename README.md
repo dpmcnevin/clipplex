@@ -129,9 +129,11 @@ ffmpeg. `-ss` goes before `-i` so it seeks by index instead of decoding up to
 the timestamp: about 200ms at any point of a 45-minute file. That also means
 previews work for sources a browser could never play, like MKV or HEVC.
 
-Clips are written to `CLIPS_DIR/videos` with a small `.json` sidecar holding
-their metadata, so listing the library costs no ffprobe per clip. Snapshots go
-to `CLIPS_DIR/images`.
+Clips are written to `CLIPS_DIR/videos` alongside a small `.json` sidecar
+holding their metadata and a `.jpg` poster frame, so listing the library costs
+neither an ffprobe nor a metadata request per clip. Clips made before either
+existed get them filled in on demand, a few per page load. Snapshots go to
+`CLIPS_DIR/images`, and throwaway range previews to `CLIPS_DIR/previews`.
 
 ## Credits
 
