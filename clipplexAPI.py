@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import os
 import re
@@ -9,9 +10,151 @@ import requests
 
 MEDIA_STATIC_PATH = "app/static/media"
 
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mkv", ".avi", ".m4v", ".mov", ".webm",
+    ".ts", ".m2ts", ".mpg", ".mpeg", ".wmv", ".flv",
+}
+
 
 class StreamableError(Exception):
     """Raised when a clip could not be uploaded to Streamable."""
+
+
+class PathNotAllowed(Exception):
+    """Raised when a supplied path escapes the directories we serve."""
+
+
+class ClipError(Exception):
+    """Raised when ffmpeg could not produce the requested output."""
+
+
+class PlexUnavailable(Exception):
+    """Raised when the Plex API could not be reached or answered badly."""
+
+
+# --------------------------------------------------------------------------
+# Paths
+#
+# Every path below arrives from the browser, so each one is resolved and then
+# checked against a known root. Without that, "../.." walks straight out of
+# the clip directory and into the mounted media.
+# --------------------------------------------------------------------------
+
+def clips_base() -> str:
+    return os.path.realpath(MEDIA_STATIC_PATH)
+
+
+def resolve_clip_path(file_path: str) -> str:
+    """Resolve a clip path from the UI, confined to the clip directory."""
+    if not file_path:
+        raise PathNotAllowed("No file was given.")
+    base = clips_base()
+    full = os.path.realpath(os.path.join("app", file_path))
+    if full != base and not full.startswith(base + os.sep):
+        raise PathNotAllowed("That path is outside the clip directory.")
+    return full
+
+
+def media_roots() -> list:
+    """The directories that can be browsed for source media."""
+    raw = os.environ.get("MEDIA_ROOTS") or "/data"
+    roots = []
+    for item in raw.split(":"):
+        item = item.strip()
+        if item and os.path.isdir(item):
+            root = os.path.realpath(item)
+            if root not in roots:
+                roots.append(root)
+    return roots
+
+
+def resolve_media_path(path: str) -> str:
+    """Resolve a source-media path, confined to the configured roots."""
+    roots = media_roots()
+    if not roots:
+        raise PathNotAllowed("No media roots are configured.")
+    full = os.path.realpath(path) if path else roots[0]
+    for root in roots:
+        if full == root or full.startswith(root + os.sep):
+            return full
+    raise PathNotAllowed("That path is outside the configured media roots.")
+
+
+def browse(path: str = "") -> dict:
+    """List sub-directories and playable files under a media root."""
+    roots = media_roots()
+    full = resolve_media_path(path)
+    if not os.path.isdir(full):
+        raise PathNotAllowed("That path is not a directory.")
+
+    dirs, files = [], []
+    with os.scandir(full) as entries:
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            try:
+                if entry.is_dir():
+                    dirs.append({"name": entry.name, "path": entry.path})
+                elif os.path.splitext(entry.name)[1].lower() in VIDEO_EXTENSIONS:
+                    files.append({
+                        "name": entry.name,
+                        "path": entry.path,
+                        "size": entry.stat().st_size,
+                    })
+            except OSError:
+                continue
+
+    dirs.sort(key=lambda item: item["name"].lower())
+    files.sort(key=lambda item: item["name"].lower())
+
+    return {
+        "path": full,
+        "parent": None if full in roots else os.path.dirname(full),
+        "roots": [{"name": os.path.basename(root) or root, "path": root} for root in roots],
+        "dirs": dirs,
+        "files": files,
+    }
+
+
+def media_info(path: str) -> dict:
+    """Name and duration of a source file, for the picker."""
+    full = resolve_media_path(path)
+    try:
+        probed = ffmpeg.probe(full)
+    except ffmpeg.Error as e:
+        raise ClipError(f"Could not read {os.path.basename(full)}: {_ffmpeg_error(e)}")
+    duration = float(probed["format"].get("duration") or 0)
+    return {
+        "path": full,
+        "name": os.path.basename(full),
+        "duration": duration,
+        "duration_str": Utils().seconds_to_time(duration),
+    }
+
+
+def _ffmpeg_error(error) -> str:
+    detail = getattr(error, "stderr", b"") or b""
+    if isinstance(detail, bytes):
+        detail = detail.decode("utf-8", "replace")
+    return detail.strip().splitlines()[-1] if detail.strip() else str(error)
+
+
+def _tidy(text: str) -> str:
+    return re.sub(r"[._]+", " ", text).strip(" -_.")
+
+
+def _parse_episode(stem: str):
+    """Pull show / season / episode out of a filename when it looks like one."""
+    match = re.match(
+        r"^(?P<show>.+?)[ ._-]+[Ss](?P<season>\d{1,2})[ ._-]?[Ee](?P<episode>\d{1,3})(?P<rest>.*)$",
+        stem,
+    )
+    if not match:
+        return "", "", "", _tidy(stem)
+    show = _tidy(match.group("show"))
+    title = _tidy(match.group("rest"))
+    return show, str(int(match.group("season"))), str(int(match.group("episode"))), title
+
 
 class PlexInfo:
     def __init__(self, username):
@@ -31,99 +174,197 @@ class PlexInfo:
         self.current_media_time_str = Utils(offset=self.current_media_time_int).offset_to_time
 
     def _get_media_fps(self) -> float:
-        """Get the frame rate of the video currently played by the user.
-
-        Returns:
-            float: Frame Rate of the video
-        """
+        """Get the frame rate of the video currently played by the user."""
         media_dict = list(list(list(list(list(self.media_path_xml)[0]))[0])[0])[0].attrib
         return float(media_dict["frameRate"])
 
     def _get_current_media_time(self) -> int:
-        """Get the offset between the start of the video and the current view position of the user.
-
-        Returns:
-            int: Offset between start of the video and current view time
-        """
+        """Offset between the start of the video and the current view position."""
         media_dict = list(list(self.sessions_xml))[self.session_id].attrib
         return int(media_dict["viewOffset"])
 
     def _get_current_sessions_xml(self) -> ET:
-        """Get the XML from plex for the current user session.
-
-        Returns:
-            ET: XML tree of the current user session
-        """
+        """Get the XML from plex for the current user session."""
         response = requests.get(f"{self.plex_url}/status/sessions", params=self.params)
-        xml_content = ET.fromstring(response.content)
-        return xml_content
+        return ET.fromstring(response.content)
 
     def _get_file_path(self) -> str:
-        """Get the file path of the video currently played by the user.
-
-        Returns:
-            str: Path of the video being played
-        """
-        media_dict = list(list(list(list(self.media_path_xml)[0]))[0])[0].attrib # REPLACE THAT BY A FIND PART TAG
+        """Get the file path of the video currently played by the user."""
+        media_dict = list(list(list(list(self.media_path_xml)[0]))[0])[0].attrib
         return media_dict["file"]
 
     def _get_file_title(self) -> str:
-        """Get the title of the video currently played by the user.
-
-        Returns:
-            str: If TV show, returns show + episode name, if movie, returns movie name.
-        """
+        """Show plus episode name for an episode, otherwise the movie name."""
+        video_dict = list(list(self.media_path_xml))[0].attrib
         if self.media_type == "episode":
-            video_dict = list(list(self.media_path_xml))[0].attrib
-            title = video_dict["title"]
-            show_name = video_dict["grandparentTitle"]
-            return f"{show_name} - {title}"
-        else:
-            video_dict = list(list(self.media_path_xml))[0].attrib
-            return video_dict["title"]
+            return f"{video_dict['grandparentTitle']} - {video_dict['title']}"
+        return video_dict["title"]
 
     def _get_file_type(self) -> str:
-        """Get the type of file of the video currently played by the user.
-
-        Returns:
-            str: File type of the video being played
-        """
+        """Get the type of file of the video currently played by the user."""
         video_dict = list(list(self.media_path_xml))[0].attrib
-        return video_dict["type"]        
+        return video_dict["type"]
 
     def _get_media_path_xml(self) -> ET:
-        """Get the XML from plex for the current user session.
-
-        Returns:
-            ET: XML tree of the current video being played
-        """
+        """Get the XML from plex for the video being played."""
         response = requests.get(f"{self.plex_url}{self.media_key}", params=self.params)
-        xml_content = ET.fromstring(response.content)
-        return xml_content
+        return ET.fromstring(response.content)
 
     def _get_media_key(self) -> str:
-        """Get the plex media key of the video being played.
-
-        Returns:
-            str: Plex media key
-        """
+        """Get the plex media key of the video being played."""
         media_info = list(list(self.sessions_xml))[self.session_id].attrib
         return media_info["key"]
 
     def _get_session_id(self, username: str) -> int:
-        """Get the plex session id of the current session for the current user.
-
-        Args:
-            username (str): Username of the queried user.
-
-        Returns:
-            int: Return the index of the session
-        """
+        """Get the plex session index for the current user."""
         for sessions in list(self.sessions_xml):
             for session in sessions:
                 if session.tag == "User" and session.attrib["title"] == username:
                     return list(self.sessions_xml).index(sessions)
         raise Exception(f"No stream running for user {username}")
+
+
+class PlexLibrary:
+    """Search and read the Plex catalogue over its HTTP API.
+
+    Deliberately not the server's SQLite database: that file is locked while
+    Plex is running and its schema is an internal detail. /search also returns
+    each match's Part file path, which is the path Clipplex needs anyway.
+    """
+
+    def __init__(self):
+        self.plex_url = os.environ.get("PLEX_URL")
+        self.plex_token = os.environ.get("PLEX_TOKEN")
+
+    def _get(self, path: str, params: dict = None) -> ET:
+        if not self.plex_url or not self.plex_token:
+            raise PlexUnavailable("PLEX_URL and PLEX_TOKEN are not configured.")
+        try:
+            response = requests.get(
+                f"{self.plex_url}{path}",
+                params={**(params or {}), "X-Plex-Token": self.plex_token},
+                timeout=20,
+            )
+        except requests.RequestException as e:
+            raise PlexUnavailable(f"Could not reach Plex: {e}")
+        if response.status_code != 200:
+            raise PlexUnavailable(f"Plex returned HTTP {response.status_code}.")
+        return ET.fromstring(response.content)
+
+    @staticmethod
+    def _entry(video) -> dict:
+        part = video.find("./Media/Part")
+        path = part.attrib.get("file", "") if part is not None else ""
+        attributes = video.attrib
+        episode = attributes.get("type") == "episode"
+
+        # Plex may know a file Clipplex cannot see, if the mounts disagree.
+        # Surface that in the result rather than failing at cut time.
+        reachable = False
+        if path:
+            try:
+                reachable = os.path.isfile(resolve_media_path(path))
+            except PathNotAllowed:
+                reachable = False
+
+        return {
+            "rating_key": attributes.get("ratingKey", ""),
+            "type": attributes.get("type", ""),
+            "title": attributes.get("title", ""),
+            "show": attributes.get("grandparentTitle", "") if episode else "",
+            "season": attributes.get("parentIndex", "") if episode else "",
+            "episode": attributes.get("index", "") if episode else "",
+            "year": attributes.get("year", ""),
+            "duration_str": Utils().milli_to_string(int(attributes.get("duration") or 0)),
+            "path": path,
+            "reachable": reachable,
+        }
+
+    def search(self, query: str, limit: int = 30) -> list:
+        query = (query or "").strip()
+        if not query:
+            return []
+        root = self._get("/search", {"query": query, "limit": limit})
+        return [
+            self._entry(video)
+            for video in root.findall("./Video")
+            if video.attrib.get("type") in ("episode", "movie")
+        ][:limit]
+
+    def item(self, rating_key: str) -> dict:
+        root = self._get(f"/library/metadata/{rating_key}")
+        video = root.find("./Video")
+        if video is None:
+            raise PlexUnavailable("Plex has no item with that id.")
+        return self._entry(video)
+
+
+@dataclass
+class ClipSource:
+    """What a clip is cut from, independent of where it was chosen.
+
+    Plex gives richer metadata; a file picked off disk gives what its name
+    reveals. Everything downstream only needs these fields.
+    """
+
+    media_path: str
+    title: str = ""
+    show: str = ""
+    season: str = ""
+    episode: str = ""
+    username: str = ""
+    source_time: str = ""
+
+    @classmethod
+    def from_plex(cls, plex_data: PlexInfo) -> "ClipSource":
+        attributes = list(list(plex_data.media_path_xml))[0].attrib
+        episode = plex_data.media_type == "episode"
+        return cls(
+            media_path=plex_data.media_path,
+            title=attributes.get("title", ""),
+            show=attributes.get("grandparentTitle", "") if episode else "",
+            season=attributes.get("parentIndex", "") if episode else "",
+            episode=attributes.get("index", "") if episode else "",
+            username=plex_data.username,
+            source_time=plex_data.current_media_time_str,
+        )
+
+    @classmethod
+    def from_file(cls, path: str, start: str = "") -> "ClipSource":
+        full = resolve_media_path(path)
+        if not os.path.isfile(full):
+            raise PathNotAllowed("That file does not exist.")
+        show, season, episode, title = _parse_episode(os.path.splitext(os.path.basename(full))[0])
+        return cls(
+            media_path=full,
+            title=title,
+            show=show,
+            season=season,
+            episode=episode,
+            source_time=start,
+        )
+
+    @classmethod
+    def from_plex_library(cls, rating_key: str, start: str = "") -> "ClipSource":
+        """A source picked out of a Plex search, with Plex's own metadata."""
+        item = PlexLibrary().item(rating_key)
+        if not item["path"]:
+            raise PathNotAllowed("Plex did not report a file for that item.")
+        return cls(
+            media_path=resolve_media_path(item["path"]),
+            title=item["title"],
+            show=item["show"],
+            season=item["season"],
+            episode=item["episode"],
+            source_time=start,
+        )
+
+    @property
+    def slug(self) -> str:
+        """Filename-safe stem for the clip this source produces."""
+        name = f"{self.show}-{self.title}" if self.show else self.title
+        name = re.sub(r"[^\w.-]", "", name.replace(" ", ""))
+        return name or "clip"
 
 
 class Snapshot:
@@ -133,50 +374,106 @@ class Snapshot:
         self.fps = int(fps)
 
     def _download_frames(self):
-        cmd = f"ffmpeg -ss {self.time} -i {self.media_path} -vframes {self.fps} -qscale:v 2 {MEDIA_STATIC_PATH}/images/{self.time.replace(':','_')}_%03d.jpg"
-        a = subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+        # Argument list, not a shell string: media paths routinely contain
+        # spaces and parentheses, which a shell would split or interpret.
+        output = os.path.join(
+            MEDIA_STATIC_PATH, "images", f"{self.time.replace(':', '_')}_%03d.jpg"
+        )
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-ss", self.time,
+                "-i", self.media_path,
+                "-vframes", str(self.fps),
+                "-qscale:v", "2",
+                output,
+            ],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise ClipError(
+                result.stderr.decode("utf-8", "replace").strip().splitlines()[-1]
+                if result.stderr else "ffmpeg failed"
+            )
+
 
 class Video:
-    def __init__(self, plex_data: PlexInfo, time: str, duration, file_name: str):
-        self.media_path = plex_data.media_path
-        plex_attributes = list(list(plex_data.media_path_xml))[0].attrib
-        self.metadata_title = plex_attributes["title"]
-        self.metadata_current_media_time = plex_data.current_media_time_str
-        print(plex_data.username)
-        self.metadata_username = plex_data.username
-        if plex_data.media_type == "episode":
-            self.metadata_season = plex_attributes["parentIndex"]
-            self.metadata_episode_number = plex_attributes["index"]
-            self.metadata_showname = plex_attributes["grandparentTitle"]
-        else:
-            self.metadata_season = ""
-            self.metadata_episode_number = ""
-            self.metadata_showname = ""
+    def __init__(self, source: ClipSource, time: str, duration, file_name: str):
+        self.source = source
         self.time = time
         self.duration = duration
         self.file_name = file_name
 
-    def extract_video(self):
-        (
-            ffmpeg
-            .input(self.media_path, ss=self.time, t=self.duration)
-            .output(f"{MEDIA_STATIC_PATH}/videos/{self.file_name}.mp4", 
-                    map_metadata=-1, 
-                    vcodec="libx264", 
-                    acodec="libvorbis", 
-                    pix_fmt="yuv420p", 
-                    crf=18, 
-                    **{"metadata:g:0":f"title={self.metadata_title}", 
-                    "metadata:g:1":f"season_number={self.metadata_season}", 
-                    "metadata:g:2":f"show={self.metadata_showname}",
-                    "metadata:g:3":f"episode_id={self.metadata_episode_number}",
-                    "metadata:g:4":f"comment={self.metadata_current_media_time}",
-                    "metadata:g:5":f"artist={self.metadata_username}"})
-            .run(capture_stdout=True)
-        )
+    def extract_video(self) -> str:
+        output = f"{MEDIA_STATIC_PATH}/videos/{self.file_name}.mp4"
+        try:
+            (
+                ffmpeg
+                .input(self.source.media_path, ss=self.time, t=self.duration)
+                .output(
+                    output,
+                    map_metadata=-1,
+                    vcodec="libx264",
+                    # AAC, not Vorbis: Vorbis in an MP4 container is not
+                    # standard and browsers routinely refuse to play it.
+                    acodec="aac",
+                    pix_fmt="yuv420p",
+                    crf=18,
+                    **{
+                        "metadata:g:0": f"title={self.source.title}",
+                        "metadata:g:1": f"season_number={self.source.season}",
+                        "metadata:g:2": f"show={self.source.show}",
+                        "metadata:g:3": f"episode_id={self.source.episode}",
+                        "metadata:g:4": f"comment={self.source.source_time}",
+                        "metadata:g:5": f"artist={self.source.username}",
+                    },
+                )
+                .run(capture_stdout=True, capture_stderr=True)
+            )
+        except ffmpeg.Error as e:
+            raise ClipError(f"ffmpeg could not cut the clip: {_ffmpeg_error(e)}")
+        return output
+
+
+class Gif:
+    """Animated GIF built from a finished clip.
+
+    Two passes: one to build a palette tuned to this clip, one to apply it.
+    A single-pass GIF is quantised to a generic 256-colour palette and bands
+    badly on film footage.
+    """
+
+    @staticmethod
+    def from_clip(clip_full_path: str, width: int = 480, fps: int = 15) -> str:
+        gif_path = os.path.splitext(clip_full_path)[0] + ".gif"
+        palette_path = gif_path + ".palette.png"
+        scale = f"fps={fps},scale={width}:-1:flags=lanczos"
+        try:
+            _run_ffmpeg([
+                "ffmpeg", "-y", "-i", clip_full_path,
+                "-vf", f"{scale},palettegen=stats_mode=diff",
+                "-frames:v", "1", palette_path,
+            ])
+            _run_ffmpeg([
+                "ffmpeg", "-y", "-i", clip_full_path, "-i", palette_path,
+                "-lavfi", f"{scale}[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle",
+                "-loop", "0", gif_path,
+            ])
+        finally:
+            if os.path.exists(palette_path):
+                os.remove(palette_path)
+        return gif_path
+
+
+def _run_ffmpeg(command: list):
+    result = subprocess.run(command, capture_output=True)
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", "replace").strip()
+        raise ClipError(detail.splitlines()[-1] if detail else "ffmpeg failed")
+
 
 class Utils:
-    def __init__(self, offset: int=0):
+    def __init__(self, offset: int = 0):
         self.offset_to_time = self.milli_to_string(offset)
 
     def milli_to_string(self, millisec: int) -> str:
@@ -185,64 +482,90 @@ class Utils:
             time = f"0{time}"
         return time.split(".")[0]
 
+    def seconds_to_time(self, seconds: float) -> str:
+        return self.milli_to_string(int(seconds * 1000))
+
     def add_time(self, current_time: str, time_to_add: int) -> str:
         time_obj = datetime.strptime(current_time, "%H:%M:%S")
-        time_obj_with_time_added = time_obj + timedelta(seconds=time_to_add)
-        return time_obj_with_time_added.strftime("%H:%M:%S")
+        return (time_obj + timedelta(seconds=time_to_add)).strftime("%H:%M:%S")
 
     def _pad_time(self, time) -> str:
         if len(str(time)) < 2:
             time = f"0{time}"
         return time
-    
+
     def calculate_clip_time(self, start, end) -> int:
-        start = start.split(":")
-        start_total_sec = (int(start[0])*3600) + (int(start[1])*60) + (int(start[2]))
-        end = end.split(":")
-        end_total_sec = (int(end[0])*3600) + (int(end[1])*60) + (int(end[2]))
-        total_second = end_total_sec - start_total_sec
-        return total_second
+        def to_seconds(value):
+            parts = value.split(":")
+            if len(parts) != 3 or not all(part.strip().isdigit() for part in parts):
+                raise ClipError(f"'{value}' is not a HH:MM:SS time.")
+            hours, minutes, seconds = (int(part) for part in parts)
+            return hours * 3600 + minutes * 60 + seconds
+
+        total = to_seconds(end) - to_seconds(start)
+        if total <= 0:
+            raise ClipError("The end time must be after the start time.")
+        return total
 
     def get_images_in_folder() -> list:
         folder = os.path.join(MEDIA_STATIC_PATH, "images")
         folder_list = []
-        for a in os.listdir(folder):
-            a = f"{folder}/{a}"
-            folder_list.append(f"{a.split('/')[-4]}/{a.split('/')[-3]}/{a.split('/')[-2]}/{a.split('/')[-1]}")
+        for name in os.listdir(folder):
+            if name.startswith("."):
+                continue
+            path = f"{folder}/{name}"
+            folder_list.append("/".join(path.split("/")[1:]))
         return sorted(folder_list)
 
     def get_videos_in_folder() -> list:
         folder = os.path.join(MEDIA_STATIC_PATH, "videos")
-        folder_list = []
-        for file in os.listdir(folder):
-            file_dict = {}
-            file = os.path.join(folder, file)
-            metadata = ffmpeg.probe(file)["format"]["tags"]
-            file_dict["file_path"] = "/".join(file.split("/")[1:])
-            file_dict["title"] = metadata.get("title") or ""
-            file_dict["original_start_time"] = metadata.get("comment") or ""
-            file_dict["username"] = metadata.get("artist") or ""
-            file_dict["show"] = metadata.get("show") or ""
-            file_dict["episode_number"] = metadata.get("episode_id") or ""
-            file_dict["season_number"] = metadata.get("season_number") or ""
-            folder_list.append(file_dict)
-        return folder_list
+        entries = []
+        for name in os.listdir(folder):
+            # Only MP4s are clips; a sibling .gif belongs to one of them.
+            if not name.lower().endswith(".mp4"):
+                continue
+            path = os.path.join(folder, name)
+            try:
+                metadata = ffmpeg.probe(path)["format"].get("tags", {})
+            except Exception:
+                metadata = {}
+            gif_path = os.path.join(folder, os.path.splitext(name)[0] + ".gif")
+            entries.append({
+                "file_path": "/".join(path.split("/")[1:]),
+                "gif_path": "/".join(gif_path.split("/")[1:]) if os.path.exists(gif_path) else "",
+                "title": metadata.get("title") or "",
+                "original_start_time": metadata.get("comment") or "",
+                "username": metadata.get("artist") or "",
+                "show": metadata.get("show") or "",
+                "episode_number": metadata.get("episode_id") or "",
+                "season_number": metadata.get("season_number") or "",
+                "mtime": os.path.getmtime(path),
+            })
+        entries.sort(key=lambda entry: entry["mtime"], reverse=True)
+        return entries
 
     def delete_file(self, file_path) -> bool:
+        full = resolve_clip_path(file_path)
         try:
-            os.remove(f"./app/{file_path}")
-            return True
-        except:
+            os.remove(full)
+        except OSError:
             return False
+        companion = os.path.splitext(full)[0] + ".gif"
+        if os.path.exists(companion):
+            try:
+                os.remove(companion)
+            except OSError:
+                pass
+        return True
 
     def upload_name(self, full_path: str) -> str:
         """Build the name sent to Streamable, which shows it as the video title.
 
         Taken from the clip's own metadata so the title reads like the show
-        rather than the stored filename, which carries the Plex username.
+        rather than the stored filename.
         """
         try:
-            tags = ffmpeg.probe(full_path)["format"]["tags"]
+            tags = ffmpeg.probe(full_path)["format"].get("tags", {})
         except Exception:
             tags = {}
         title = (tags.get("title") or "").strip()
@@ -260,7 +583,7 @@ class Utils:
         name = name.strip(" -")
         if not name:
             # Older clips may have no metadata: fall back to the filename with
-            # the leading username and the trailing timestamp removed.
+            # any leading username and the trailing timestamp removed.
             stem = os.path.splitext(os.path.basename(full_path))[0]
             name = re.sub(r"_\d{9,}$", "", stem.split("_", 1)[-1])
         return f"{name}.mp4"
@@ -272,7 +595,7 @@ class Utils:
             raise StreamableError(
                 "Streamable credentials are not configured. Set STREAMABLE_LOGIN and STREAMABLE_PASSWORD."
             )
-        full_path = f"app/{file_path}"
+        full_path = resolve_clip_path(file_path)
         try:
             with open(full_path, "rb") as clip:
                 response = requests.post(
@@ -282,7 +605,7 @@ class Utils:
                     timeout=600,
                 )
         except OSError as e:
-            raise StreamableError(f"Could not read {full_path}: {e}")
+            raise StreamableError(f"Could not read {os.path.basename(full_path)}: {e}")
         except requests.RequestException as e:
             raise StreamableError(f"Could not reach Streamable: {e}")
 
@@ -293,5 +616,3 @@ class Utils:
             return response.json()
         except ValueError:
             raise StreamableError("Streamable returned a response that was not JSON.")
-
-
