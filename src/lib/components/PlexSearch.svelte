@@ -32,15 +32,24 @@
     }
   }
 
-  const labelFor = (item) =>
+  function clear() {
+    query = "";
+    results = [];
+    status = "";
+  }
+
+  // Two lines: what it is, then which part of it. Squeezing both onto one
+  // line in a narrow column cut off the episode, which is the bit you need.
+  const headline = (item) => item.show || item.title;
+  const detail = (item) =>
     item.show
-      ? `${item.show} · S${item.season}E${item.episode} · ${item.title}`
-      : item.title + (item.year ? ` (${item.year})` : "");
+      ? `S${item.season}E${item.episode} · ${item.title}`
+      : [item.year, item.type].filter(Boolean).join(" · ");
 
   function pick(item) {
     pickedKey = item.ratingKey;
     onPick({
-      label: labelFor(item),
+      label: item.show ? `${headline(item)} · ${detail(item)}` : headline(item),
       meta: item.durationStr,
       ratingKey: item.ratingKey,
       path: item.path,
@@ -49,20 +58,21 @@
   }
 </script>
 
-<div class="field">
-  <label for="plex-search">Search</label>
+<div class="search-field">
+  <i class="fas fa-search"></i>
   <input
-    id="plex-search"
     type="text"
-    size="28"
-    placeholder="Title, show or episode"
+    placeholder="Search your Plex library"
+    aria-label="Search your Plex library"
     bind:value={query}
     oninput={queue}
     onkeydown={(event) => event.key === "Enter" && (event.preventDefault(), run())}
   />
-  <button type="button" class="btn btn--ghost" onclick={run}>
-    <i class="fas fa-search"></i> Search
-  </button>
+  {#if query}
+    <button type="button" class="search-clear" aria-label="Clear search" onclick={clear}>
+      <i class="fas fa-times"></i>
+    </button>
+  {/if}
 </div>
 
 {#if status || results.length}
@@ -80,18 +90,21 @@
         onclick={() => pick(item)}
       >
         <i class="fas {item.show ? 'fa-tv' : 'fa-film'}"></i>
-        <span class="picker-name">
-          {labelFor(item)}
+        <span class="picker-text">
+          <span class="picker-line">
+            <span class="picker-name">{headline(item)}</span>
+            <span class="picker-meta">{item.reachable ? item.durationStr : "unavailable"}</span>
+          </span>
+          {#if detail(item)}
+            <span class="picker-sub">{detail(item)}</span>
+          {/if}
           {#if !item.reachable}
-            <!-- A tooltip is invisible on touch, and this is the one message
-                 that explains a mount mismatch. -->
             <span class="picker-reason">
-              Plex has this at {item.path}, which Clipplex cannot see — check
-              that both containers mount the media at the same paths.
+              Plex has this at {item.path}, which Clipplex cannot see — check that
+              both containers mount the media at the same paths.
             </span>
           {/if}
         </span>
-        <span class="picker-meta">{item.reachable ? item.durationStr : "unavailable"}</span>
       </button>
     {/each}
   </div>
