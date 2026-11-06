@@ -74,6 +74,14 @@
     }
   }
 
+  // The selection can also move from outside — a dialogue search jumping to
+  // a line — so keep the zoom window over it however it got there.
+  $effect(() => {
+    void inSec;
+    void outSec;
+    follow();
+  });
+
   $effect(() => {
     if (!path || !duration || path === initialisedFor) return;
     initialisedFor = path;

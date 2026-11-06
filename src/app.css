@@ -1357,3 +1357,84 @@ input[type="text"]::placeholder {
     opacity: 1;
   }
 }
+
+/* ---------- dialogue search ---------- */
+
+.dialogue {
+  margin-bottom: 16px;
+}
+
+.dialogue-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 9px 13px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.dialogue-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.dialogue-lang {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+
+.dialogue-chevron {
+  margin-left: auto;
+  font-size: 11px;
+}
+
+.dialogue .search-field {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.dialogue-none {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 9px 13px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+}
+
+.cues {
+  max-height: 260px;
+}
+
+.cues .picker-row {
+  align-items: baseline;
+  gap: 12px;
+}
+
+.cue-time {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.cue-text {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

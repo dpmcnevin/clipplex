@@ -87,17 +87,21 @@ docker compose up -d --build clipplex
 1. Choose a source: **Now playing**, **Search Plex**, or **Browse files**.
 2. For Now playing, enter your Plex username and press *Check stream*, then
    *Use as start*. Otherwise pick an item or a file.
-3. Drag the in and out handles on the scrubber — it shows the frame under the
+3. If the file has text subtitles, **Find a line** searches its dialogue —
+   click a line and the clip jumps there with a second of air either side.
+   Files whose subtitles are images (PGS) or absent say so rather than
+   returning nothing.
+4. Drag the in and out handles on the scrubber — it shows the frame under the
    handle as you move it. Drag the middle to move the clip without changing
    its length, or pick a preset length (5s to 5m). Focus a handle and use the
    arrow keys to nudge by a second, or hold shift for ten. The time fields
    stay in step, so you can also type an exact range.
-4. Click the frame (or **Preview range**) to render a 480p draft of just that
+5. Click the frame (or **Preview range**) to render a 480p draft of just that
    range and play it in place, so you can check you caught the moment before
    encoding properly. Drafts are cached and swept after a day.
-5. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
+6. Tick *Also make a GIF* if you want one, then **Create clip**. A progress
    bar follows ffmpeg as it cuts.
-6. Download it, make a GIF from it afterwards, or **Share** to upload to
+7. Download it, make a GIF from it afterwards, or **Share** to upload to
    Streamable — the link stays on the card.
 
 ## Development
@@ -133,7 +137,8 @@ Clips are written to `CLIPS_DIR/videos` alongside a small `.json` sidecar
 holding their metadata and a `.jpg` poster frame, so listing the library costs
 neither an ffprobe nor a metadata request per clip. Clips made before either
 existed get them filled in on demand, a few per page load. Snapshots go to
-`CLIPS_DIR/images`, and throwaway range previews to `CLIPS_DIR/previews`.
+`CLIPS_DIR/images`, throwaway range previews to `CLIPS_DIR/previews`, and
+extracted subtitle cues to `CLIPS_DIR/subs`.
 
 ## Credits
 

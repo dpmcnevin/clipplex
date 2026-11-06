@@ -2,6 +2,7 @@
   import { browser } from "$app/environment";
   import { invalidateAll } from "$app/navigation";
   import ClipCard from "$lib/components/ClipCard.svelte";
+  import DialogueSearch from "$lib/components/DialogueSearch.svelte";
   import FileBrowser from "$lib/components/FileBrowser.svelte";
   import NowPlaying from "$lib/components/NowPlaying.svelte";
   import PlexSearch from "$lib/components/PlexSearch.svelte";
@@ -57,6 +58,21 @@
   function pickSource(kind) {
     source = kind;
     if (kind === "plex") selected = null;
+  }
+
+  const toParts = (total) => {
+    const whole = Math.max(0, Math.round(total));
+    return [Math.floor(whole / 3600), Math.floor((whole % 3600) / 60), whole % 60].map((part) =>
+      String(part).padStart(2, "0")
+    );
+  };
+
+  function jumpToCue(cue) {
+    const start = Math.max(0, Math.floor(cue.start) - 1);
+    const end = Math.ceil(cue.end) + 1;
+    startParts = toParts(start);
+    endParts = toParts(selected?.duration ? Math.min(end, selected.duration) : end);
+    previewUrl = "";
   }
 
   function useStartTime(time) {
@@ -255,6 +271,10 @@
         <span style="flex:1; min-width:0;">{selected.label}</span>
         <span class="clip-sub">{selected.meta}</span>
       </div>
+    {/if}
+
+    {#if selected?.path}
+      <DialogueSearch path={selected.path} onPick={jumpToCue} />
     {/if}
 
     {#if selected?.path && selected?.duration}
