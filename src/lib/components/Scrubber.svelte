@@ -12,6 +12,7 @@
   let previewSrc = $state("");
   let previewFor = $state(0);
   let initialisedFor = $state("");
+  let grabOffset = 0;
   let timer = null;
 
   const clamp = (value) => Math.min(duration, Math.max(0, value));
@@ -74,20 +75,75 @@
     }
   }
 
+  /** Slide the whole selection, keeping its length. */
+  function applyWindow(seconds) {
+    const length = outSec - inSec;
+    const nextIn = Math.min(Math.max(0, seconds - grabOffset), Math.max(0, duration - length));
+    startParts = secondsToParts(nextIn);
+    endParts = secondsToParts(nextIn + length);
+    queuePreview(nextIn, "in");
+  }
+
+  /** Set the clip to a fixed length, nudging it back if it runs off the end. */
+  function setLength(length) {
+    if (!duration) return;
+    const capped = Math.min(length, duration);
+    const start = Math.min(inSec, Math.max(0, duration - capped));
+    startParts = secondsToParts(start);
+    endParts = secondsToParts(start + capped);
+    queuePreview(start, "in");
+  }
+
   function down(event) {
     if (!duration) return;
     const seconds = timeAt(event);
-    dragging = Math.abs(seconds - inSec) <= Math.abs(seconds - outSec) ? "in" : "out";
-    track.setPointerCapture(event.pointerId);
-    apply(seconds, dragging);
+
+    // Within a few pixels of a handle, grab that handle; inside the band,
+    // slide the whole thing; otherwise move whichever handle is nearer.
+    // The grab zones shrink with the band, so a short clip still leaves a
+    // middle to drag instead of being all handle.
+    const rect = track.getBoundingClientRect();
+    const bandPx = rect.width ? ((outSec - inSec) / duration) * rect.width : 0;
+    // A short clip in a long file is only a few pixels wide. Trimming that by
+    // dragging is hopeless anyway (the arrow keys and time fields are for
+    // that), so give the whole band to the slide instead of to handle zones.
+    const tolerancePx = bandPx < 16 ? 0 : Math.min(12, Math.max(4, bandPx / 3));
+    const tolerance = rect.width ? (tolerancePx / rect.width) * duration : 0;
+
+    if (Math.abs(seconds - inSec) <= tolerance) {
+      dragging = "in";
+    } else if (Math.abs(seconds - outSec) <= tolerance) {
+      dragging = "out";
+    } else if (seconds > inSec && seconds < outSec) {
+      dragging = "window";
+      grabOffset = seconds - inSec;
+    } else {
+      dragging = Math.abs(seconds - inSec) <= Math.abs(seconds - outSec) ? "in" : "out";
+    }
+
+    try {
+      track.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic or already-released pointers cannot be captured.
+    }
+    if (dragging === "window") applyWindow(seconds);
+    else apply(seconds, dragging);
   }
 
   function move(event) {
-    if (dragging) apply(timeAt(event), dragging);
+    if (!dragging) return;
+    if (dragging === "window") applyWindow(timeAt(event));
+    else apply(timeAt(event), dragging);
   }
 
   function up(event) {
-    if (dragging) track.releasePointerCapture?.(event.pointerId);
+    if (dragging) {
+      try {
+        track.releasePointerCapture(event.pointerId);
+      } catch {
+        // Nothing captured.
+      }
+    }
     dragging = null;
   }
 
@@ -122,7 +178,11 @@
       onpointerup={up}
       onpointercancel={up}
     >
-      <div class="scrub-range" style="left: {inPct}%; width: {Math.max(0, outPct - inPct)}%"></div>
+      <div
+        class="scrub-range"
+        class:grabbing={dragging === "window"}
+        style="left: {inPct}%; width: {Math.max(0, outPct - inPct)}%"
+      ></div>
       <button
         type="button"
         class="scrub-handle"
@@ -148,6 +208,21 @@
       <span class="scrub-length">{fmt(Math.max(0, outSec - inSec))} long</span>
       <span>Out <b>{fmt(outSec)}</b></span>
     </div>
-    <div class="scrub-hint">Drag the handles, or focus one and use ← → (hold shift for 10s)</div>
+    <div class="scrub-presets">
+      <span>Length</span>
+      {#each [[5, "5s"], [10, "10s"], [15, "15s"], [30, "30s"], [60, "1m"], [120, "2m"], [300, "5m"]] as [seconds, label]}
+        <button
+          type="button"
+          class="chip"
+          class:chip--on={Math.round(outSec - inSec) === Math.min(seconds, Math.round(duration))}
+          onclick={() => setLength(seconds)}
+        >{label}</button>
+      {/each}
+    </div>
+
+    <div class="scrub-hint">
+      Drag the handles to trim, or drag the middle to move the clip without
+      changing its length. Focus a handle and use ← → (hold shift for 10s).
+    </div>
   </div>
 {/if}

@@ -88,9 +88,10 @@ docker compose up -d --build clipplex
 2. For Now playing, enter your Plex username and press *Check stream*, then
    *Use as start*. Otherwise pick an item or a file.
 3. Drag the in and out handles on the scrubber — it shows the frame under the
-   handle as you move it. Focus a handle and use the arrow keys to nudge by a
-   second, or hold shift for ten. The time fields stay in step, so you can
-   also type an exact range, or use `+15s` / `+30s` / `+1m` / `+2m`.
+   handle as you move it. Drag the middle to move the clip without changing
+   its length, or pick a preset length (5s to 5m). Focus a handle and use the
+   arrow keys to nudge by a second, or hold shift for ten. The time fields
+   stay in step, so you can also type an exact range.
 4. **Preview range** renders a 480p draft of just that range and plays it
    inline, so you can check you caught the moment before encoding properly.
    Drafts are cached and swept after a day.

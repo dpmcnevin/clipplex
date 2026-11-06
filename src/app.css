@@ -828,7 +828,6 @@ input[type="text"]:focus {
   background: rgba(232, 163, 61, 0.22);
   border-left: 2px solid var(--accent);
   border-right: 2px solid var(--accent);
-  pointer-events: none;
 }
 
 .scrub-handle {
@@ -900,4 +899,29 @@ input[type="text"]:focus {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* ---------- scrubber: grabbable band and length presets ---------- */
+
+.scrub-range {
+  cursor: grab;
+}
+
+.scrub-range.grabbing {
+  cursor: grabbing;
+  background: rgba(232, 163, 61, 0.3);
+}
+
+.scrub-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.scrub-presets > span {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-right: 2px;
 }
